@@ -69,8 +69,8 @@ DEVICE_REBIND_COOLDOWN_HOURS = env_int("DEVICE_REBIND_COOLDOWN_HOURS", 6, 1, 168
 ADMIN_COOKIE_SECURE = env_bool("ADMIN_COOKIE_SECURE", IS_PRODUCTION)
 TRUST_PROXY_HEADERS = env_bool("TRUST_PROXY_HEADERS", False)
 RATE_LIMIT_ENABLED = env_bool("RATE_LIMIT_ENABLED", True)
-APP_VERSION = os.environ.get("APP_VERSION", "0.2.0").strip() or "0.2.0"
-SERVER_VERSION = os.environ.get("SERVER_VERSION", "0.2.1").strip() or "0.2.1"
+APP_VERSION = os.environ.get("APP_VERSION", "0.2.1").strip() or "0.2.1"
+SERVER_VERSION = os.environ.get("SERVER_VERSION", "0.2.2").strip() or "0.2.2"
 CORS_ALLOW_ORIGINS = [
     origin.strip()
     for origin in os.environ.get(
@@ -149,6 +149,11 @@ EXPECTED_SCHEMA_COLUMNS = {
         "published_at": "TEXT",
         "published_by": "TEXT",
     },
+    "site_pricing": {
+        "plan": "TEXT",
+        "price_display": "TEXT",
+        "updated_at": "TEXT",
+    },
 }
 
 PLAN_DAYS = {
@@ -169,7 +174,14 @@ PLAN_LABELS = {
     "custom": "自定义天数",
 }
 
-ADMIN_FRONTEND_BUILD = "admin-operations-20260807-v021"
+PRICING_PLANS = {
+    "month": {"label": "月度", "period": "/ 月", "description": "适合短期项目与轻量使用"},
+    "quarter": {"label": "季度", "period": "/ 季", "description": "适合持续运营与稳定产出"},
+    "year": {"label": "年度", "period": "/ 年", "description": "适合长期、高频的视频工作流"},
+    "permanent": {"label": "永久", "period": "一次付费", "description": "长期使用，无需周期续费"},
+}
+
+ADMIN_FRONTEND_BUILD = "admin-operations-20260807-v022"
 NO_STORE_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"}
 
 
@@ -473,6 +485,12 @@ def create_base_schema(conn: sqlite3.Connection) -> None:
             published_by TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS site_pricing (
+            plan TEXT PRIMARY KEY,
+            price_display TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+        );
+
         """)
 
 
@@ -523,6 +541,11 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         """,
         (APP_VERSION, APP_VERSION, f"Video Mix Pro {APP_VERSION}", "", "", "", now),
     )
+    for pricing_plan in PRICING_PLANS:
+        conn.execute(
+            "INSERT OR IGNORE INTO site_pricing(plan,price_display,updated_at) VALUES(?,?,?)",
+            (pricing_plan, "", now),
+        )
 
     if schema_changes and not migration_applied(conn, "001_additive_schema_backfill"):
         mark_migration(conn, "001_additive_schema_backfill")
@@ -530,6 +553,8 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         mark_migration(conn, "002_device_cooldown_and_releases")
     if not migration_applied(conn, "003_operations_console"):
         mark_migration(conn, "003_operations_console")
+    if not migration_applied(conn, "004_pricing_and_release_management"):
+        mark_migration(conn, "004_pricing_and_release_management")
 
 
 def init_db() -> None:
@@ -672,6 +697,23 @@ def release_payload(release: dict[str, Any], current_version: str | None = None)
     return payload
 
 
+def pricing_payload(conn: sqlite3.Connection) -> list[dict[str, str]]:
+    rows = {
+        row["plan"]: str(row["price_display"] or "")
+        for row in conn.execute("SELECT plan,price_display FROM site_pricing").fetchall()
+    }
+    return [
+        {
+            "plan": plan,
+            "label": definition["label"],
+            "period": definition["period"],
+            "description": definition["description"],
+            "price_display": rows.get(plan, ""),
+        }
+        for plan, definition in PRICING_PLANS.items()
+    ]
+
+
 def redeem_plan_days(redeem_code: dict[str, Any]) -> int | None:
     plan = redeem_code.get("plan")
     if plan == "custom":
@@ -722,7 +764,15 @@ def latest_update(channel: str = "stable"):
     if channel != "stable":
         raise HTTPException(404, "更新通道不存在")
     with db() as conn:
-        return release_payload(get_release(conn, channel))
+        payload = release_payload(get_release(conn, channel))
+    return JSONResponse(payload, headers=NO_STORE_HEADERS)
+
+
+@app.get("/api/site/pricing")
+def site_pricing():
+    with db() as conn:
+        payload = {"items": pricing_payload(conn)}
+    return JSONResponse(payload, headers=NO_STORE_HEADERS)
 
 
 @app.get("/api/update/check")
@@ -1016,8 +1066,10 @@ def require_admin(request: Request, require_csrf: bool = False) -> AdminSession:
 
 @app.get("/", response_class=HTMLResponse)
 def root():
+    with db() as conn:
+        current_version = str(get_release(conn).get("latest_version") or APP_VERSION)
     return HTMLResponse(
-        render_template("site.html", {"APP_VERSION": APP_VERSION}),
+        render_template("site.html", {"APP_VERSION": current_version}),
         headers={"Cache-Control": "public, max-age=300"},
     )
 
@@ -1077,7 +1129,7 @@ def admin_logout(request: Request):
     token = request.cookies.get("admin_session", "")
     with ADMIN_SESSIONS_LOCK:
         ADMIN_SESSIONS.pop(token, None)
-    response = JSONResponse({"ok": True})
+    response = JSONResponse({"ok": True, "redirect_url": "/"})
     response.delete_cookie("admin_session", path="/admin")
     return response
 
@@ -1090,6 +1142,7 @@ def admin_summary(request: Request):
         release_history = [dict(r) for r in conn.execute(
             "SELECT * FROM app_release_history ORDER BY published_at DESC, id DESC LIMIT 20"
         ).fetchall()]
+        pricing = pricing_payload(conn)
         current_time = now_iso()
         seven_days = (now_utc() + timedelta(days=7)).isoformat()
         today_prefix = now_utc().date().isoformat() + "%"
@@ -1142,6 +1195,7 @@ def admin_summary(request: Request):
         "plans": PLAN_LABELS,
         "release": release,
         "release_history": release_history,
+        "pricing": pricing,
         "metrics": metrics,
         "code_batches": code_batches,
         "device_rebind_cooldown_hours": DEVICE_REBIND_COOLDOWN_HOURS,
@@ -1300,10 +1354,7 @@ def admin_audit(request: Request, q: str = "", action: str = "all", page: int = 
     return {"items": rows, "actions": actions, "total": total, "page": page, "page_size": page_size, "pages": max(1, (total + page_size - 1) // page_size)}
 
 
-@app.post("/admin/api/release")
-async def update_release(request: Request):
-    require_admin(request, require_csrf=True)
-    data = await request.json()
+def normalize_release_data(data: dict[str, Any]) -> dict[str, Any]:
     latest_version = str(data.get("latest_version") or "").strip()
     minimum_version = str(data.get("minimum_version") or latest_version).strip()
     title = str(data.get("title") or f"Video Mix Pro {latest_version}").strip()[:120]
@@ -1327,6 +1378,28 @@ async def update_release(request: Request):
             raise HTTPException(400, "请填写 GitHub Releases 的直接下载链接")
     if sha256 and not re.fullmatch(r"[0-9A-F]{64}", sha256):
         raise HTTPException(400, "SHA-256 必须是 64 位十六进制字符串")
+    return {
+        "latest_version": latest_version,
+        "minimum_version": minimum_version,
+        "title": title,
+        "notes": notes,
+        "download_url": download_url,
+        "sha256": sha256,
+        "is_mandatory": is_mandatory,
+    }
+
+
+@app.post("/admin/api/release")
+async def update_release(request: Request):
+    require_admin(request, require_csrf=True)
+    release_data = normalize_release_data(await request.json())
+    latest_version = release_data["latest_version"]
+    minimum_version = release_data["minimum_version"]
+    title = release_data["title"]
+    notes = release_data["notes"]
+    download_url = release_data["download_url"]
+    sha256 = release_data["sha256"]
+    is_mandatory = release_data["is_mandatory"]
 
     updated_at = now_iso()
     with db() as conn:
@@ -1364,6 +1437,68 @@ async def update_release(request: Request):
         )
         release = release_payload(get_release(conn))
     return {"ok": True, "release": release}
+
+
+@app.put("/admin/api/release_history/{history_id}")
+async def update_release_history(history_id: int, request: Request):
+    require_admin(request, require_csrf=True)
+    release_data = normalize_release_data(await request.json())
+    with db() as conn:
+        existing = conn.execute("SELECT id FROM app_release_history WHERE id=?", (history_id,)).fetchone()
+        if not existing:
+            raise HTTPException(404, "历史版本不存在")
+        conn.execute(
+            """UPDATE app_release_history
+               SET latest_version=?,minimum_version=?,title=?,notes=?,download_url=?,sha256=?,is_mandatory=?
+               WHERE id=?""",
+            (
+                release_data["latest_version"], release_data["minimum_version"], release_data["title"],
+                release_data["notes"], release_data["download_url"], release_data["sha256"],
+                release_data["is_mandatory"], history_id,
+            ),
+        )
+        audit(conn, ADMIN_USER, "release_history_update", str(history_id), release_data["latest_version"], client_ip(request))
+    return {"ok": True}
+
+
+@app.delete("/admin/api/release_history/{history_id}")
+def delete_release_history(history_id: int, request: Request):
+    require_admin(request, require_csrf=True)
+    with db() as conn:
+        existing = conn.execute(
+            "SELECT latest_version FROM app_release_history WHERE id=?", (history_id,)
+        ).fetchone()
+        if not existing:
+            raise HTTPException(404, "历史版本不存在")
+        conn.execute("DELETE FROM app_release_history WHERE id=?", (history_id,))
+        audit(conn, ADMIN_USER, "release_history_delete", str(history_id), existing["latest_version"], client_ip(request))
+    return {"ok": True}
+
+
+@app.post("/admin/api/pricing")
+async def update_pricing(request: Request):
+    require_admin(request, require_csrf=True)
+    data = await request.json()
+    prices = data.get("prices") or {}
+    if not isinstance(prices, dict):
+        raise HTTPException(400, "价格配置格式错误")
+    normalized: dict[str, str] = {}
+    for plan in PRICING_PLANS:
+        value = str(prices.get(plan) or "").strip()
+        if len(value) > 40:
+            raise HTTPException(400, f"{PRICING_PLANS[plan]['label']}价格展示不能超过 40 个字符")
+        normalized[plan] = value
+    updated_at = now_iso()
+    with db() as conn:
+        for plan, value in normalized.items():
+            conn.execute(
+                """INSERT INTO site_pricing(plan,price_display,updated_at) VALUES(?,?,?)
+                   ON CONFLICT(plan) DO UPDATE SET price_display=excluded.price_display,updated_at=excluded.updated_at""",
+                (plan, value, updated_at),
+            )
+        audit(conn, ADMIN_USER, "pricing_update", "website", "; ".join(f"{key}={value}" for key, value in normalized.items()), client_ip(request))
+        pricing = pricing_payload(conn)
+    return {"ok": True, "pricing": pricing}
 
 
 @app.post("/admin/api/create_codes")
@@ -1515,6 +1650,7 @@ async def user_action(request: Request):
     data = await request.json()
     user_id = int(data.get("user_id"))
     action = data.get("action")
+    audit_detail = str(data.get("plan") or "")
     with db() as conn:
         user = row_to_dict(conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone())
         if not user:
@@ -1544,6 +1680,18 @@ async def user_action(request: Request):
                 "UPDATE users SET device_rebind_cooldown_until=NULL,updated_at=? WHERE id=?",
                 (now_iso(), user_id),
             )
+        elif action == "change_password":
+            new_password = str(data.get("new_password") or "")
+            if len(new_password) < 6:
+                raise HTTPException(400, "新密码至少需要 6 个字符")
+            if len(new_password) > 256:
+                raise HTTPException(400, "新密码不能超过 256 个字符")
+            conn.execute(
+                "UPDATE users SET password_hash=?,updated_at=? WHERE id=?",
+                (hash_password(new_password), now_iso(), user_id),
+            )
+            conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+            audit_detail = "password reset; sessions revoked"
         elif action == "delete_user":
             conn.execute("UPDATE redeem_codes SET used_by_username_snapshot=COALESCE(used_by_username_snapshot, ?) WHERE used_by=?", (user.get("username") or "", user_id))
             conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
@@ -1572,7 +1720,7 @@ async def user_action(request: Request):
             conn.execute("UPDATE users SET is_member=1, plan=?, member_expires_at=?, updated_at=? WHERE id=?", (plan, expires_at, now_iso(), user_id))
         else:
             raise HTTPException(400, "未知操作")
-        audit(conn, ADMIN_USER, f"user_{action}", user.get("username") or str(user_id), str(data.get("plan") or ""), client_ip(request))
+        audit(conn, ADMIN_USER, f"user_{action}", user.get("username") or str(user_id), audit_detail, client_ip(request))
     return {"ok": True}
 
 

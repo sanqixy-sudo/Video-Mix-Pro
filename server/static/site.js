@@ -83,4 +83,18 @@
       const notes = document.getElementById("releaseNotes");
       if (notes) notes.textContent = "暂时无法读取发布信息，请稍后刷新页面。";
     });
+
+  fetch("/api/site/pricing", { headers: { Accept: "application/json" } })
+    .then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .then((payload) => {
+      (payload.items || []).forEach((item) => {
+        const card = document.querySelector(`[data-pricing-plan="${item.plan}"]`);
+        const price = card?.querySelector("[data-price-value]");
+        if (price) price.textContent = item.price_display || "后台配置";
+      });
+    })
+    .catch(() => undefined);
 })();

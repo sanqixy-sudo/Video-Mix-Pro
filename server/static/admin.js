@@ -6,12 +6,14 @@
     plans: {},
     release: null,
     releaseHistory: [],
+    pricing: [],
     codeBatches: [],
     users: { items: [], page: 1, pages: 1, total: 0 },
     codes: { items: [], page: 1, pages: 1, total: 0 },
     audit: { items: [], actions: [], page: 1, pages: 1, total: 0 },
     selectedUsers: new Set(),
     selectedCodes: new Set(),
+    passwordUser: null,
   };
   const byId = (id) => document.getElementById(id);
   const errorBox = byId("adminError");
@@ -164,6 +166,7 @@
     state.plans = summary.plans || {};
     state.release = summary.release || null;
     state.releaseHistory = Array.isArray(summary.release_history) ? summary.release_history : [];
+    state.pricing = Array.isArray(summary.pricing) ? summary.pricing : [];
     state.codeBatches = Array.isArray(summary.code_batches) ? summary.code_batches : [];
     const metrics = summary.metrics || {};
     byId("metricUsers").textContent = String(metrics.users_total ?? 0);
@@ -176,6 +179,7 @@
     byId("metricCodeIssues").textContent = String((metrics.codes_disabled || 0) + (metrics.codes_expired || 0));
     fillRelease(state.release);
     renderReleaseHistory();
+    fillPricing();
     fillBatchFilter();
   }
 
@@ -220,8 +224,9 @@
   async function runUserAction(user, action) {
     const labels = {
       grant: "开通会员", revoke: "撤销会员", ban: "封禁账号", unban: "解除封禁",
-      reset_device: "解绑设备", reset_device_cooldown: "解除换绑冷却", delete_user: "删除用户",
+      reset_device: "解绑设备", reset_device_cooldown: "解除换绑冷却", delete_user: "删除用户", change_password: "修改密码",
     };
+    if (action === "change_password") return openPasswordDialog(user);
     const payload = { user_id: user.id, action };
     if (action === "grant") {
       const plan = window.prompt("会员类型：month / quarter / half_year / year / permanent / custom", user.plan || "month");
@@ -239,6 +244,15 @@
       notify(`${labels[action]}成功`);
       await Promise.all([loadSummary(), loadUsers(state.users.page)]);
     });
+  }
+
+  function openPasswordDialog(user) {
+    state.passwordUser = user;
+    byId("passwordDialogTitle").textContent = `修改 ${user.username} 的密码`;
+    byId("newUserPassword").value = "";
+    byId("confirmUserPassword").value = "";
+    byId("passwordDialog").showModal();
+    byId("newUserPassword").focus();
   }
 
   function renderUsers() {
@@ -286,6 +300,7 @@
       actionGroup.append(actionButton(user.is_banned ? "解封" : "封禁", user.is_banned ? "unban" : "ban", user, user.is_banned ? "" : "warning"));
       if (user.device_rebind_remaining_seconds > 0) actionGroup.append(actionButton("解除冷却", "reset_device_cooldown", user, "warning"));
       if (user.device_id) actionGroup.append(actionButton("解绑设备", "reset_device", user));
+      actionGroup.append(actionButton("修改密码", "change_password", user));
       actionGroup.append(actionButton("删除", "delete_user", user, "danger"));
       row.append(node("td", { className: "check-cell" }, [selected]), identity, membership, device, cooldown, node("td", { text: formatDate(user.created_at) }), node("td", {}, [actionGroup]));
       body.append(row);
@@ -441,20 +456,54 @@
     byId("releaseUpdatedAt").textContent = release.updated_at ? `最后更新：${formatDate(release.updated_at)}` : "";
   }
 
+  function fillPricing() {
+    const ids = { month: "priceMonth", quarter: "priceQuarter", year: "priceYear", permanent: "pricePermanent" };
+    state.pricing.forEach((item) => {
+      if (ids[item.plan]) byId(ids[item.plan]).value = item.price_display || "";
+    });
+  }
+
+  function openReleaseHistoryDialog(item) {
+    byId("historyId").value = String(item.id);
+    byId("historyVersion").value = item.latest_version || "";
+    byId("historyMinimumVersion").value = item.minimum_version || "";
+    byId("historyTitle").value = item.title || "";
+    byId("historyDownloadUrl").value = item.download_url || "";
+    byId("historySha256").value = item.sha256 || "";
+    byId("historyNotes").value = item.notes || "";
+    byId("historyMandatory").checked = Boolean(item.is_mandatory);
+    byId("releaseHistoryDialog").showModal();
+  }
+
+  async function deleteReleaseHistory(item) {
+    if (!window.confirm(`确定删除历史版本 v${item.latest_version} 吗？这不会删除当前稳定版配置。`)) return;
+    await run(async () => {
+      await api(`/admin/api/release_history/${item.id}`, { method: "DELETE" });
+      notify("历史版本已删除");
+      await Promise.all([loadSummary(), loadAudit(1)]);
+    });
+  }
+
   function renderReleaseHistory() {
     const shell = byId("releaseHistoryTable");
     shell.replaceChildren();
     if (!state.releaseHistory.length) return empty(shell, "暂无发布历史，保存一次发布信息后会自动记录");
     const table = node("table", { className: "admin-table history-table" });
-    table.append(tableHead(["版本", "最低版本", "标题 / 说明", "下载 / 校验", "发布时间", "发布人"]));
+    table.append(tableHead(["版本", "最低版本", "标题 / 说明", "下载 / 校验", "发布时间", "发布人", "操作"]));
     const body = node("tbody");
     state.releaseHistory.forEach((item) => {
       const releaseInfo = node("td", {}, [node("strong", { text: item.title || "—" }), node("small", { text: item.notes || "无更新说明" })]);
       const download = node("td", {}, [node("small", { text: item.download_url || "未设置下载地址", title: item.download_url || "" }), node("small", { text: item.sha256 ? `SHA-256 ${item.sha256}` : "无校验值" })]);
+      const actions = node("div", { className: "table-actions" });
+      const edit = node("button", { text: "编辑", type: "button" });
+      const remove = node("button", { className: "danger", text: "删除", type: "button" });
+      edit.addEventListener("click", () => openReleaseHistoryDialog(item));
+      remove.addEventListener("click", () => void deleteReleaseHistory(item));
+      actions.append(edit, remove);
       body.append(node("tr", {}, [
         node("td", {}, [badge(item.latest_version, item.is_mandatory ? "warning" : "success")]),
         node("td", { text: item.minimum_version }), releaseInfo, download,
-        node("td", { text: formatDate(item.published_at) }), node("td", { text: item.published_by || "—" }),
+        node("td", { text: formatDate(item.published_at) }), node("td", { text: item.published_by || "—" }), node("td", {}, [actions]),
       ]));
     });
     table.append(body);
@@ -540,6 +589,67 @@
     }
   }));
 
+  byId("pricingForm").addEventListener("submit", (event) => void run(async () => {
+    event.preventDefault();
+    const submit = event.submitter;
+    if (submit) submit.disabled = true;
+    try {
+      const result = await api("/admin/api/pricing", {
+        method: "POST",
+        body: JSON.stringify({ prices: {
+          month: byId("priceMonth").value.trim(),
+          quarter: byId("priceQuarter").value.trim(),
+          year: byId("priceYear").value.trim(),
+          permanent: byId("pricePermanent").value.trim(),
+        } }),
+      });
+      state.pricing = result.pricing || [];
+      fillPricing();
+      notify("官网定价已保存");
+      await loadAudit(1);
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  }));
+
+  byId("passwordForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    void run(async () => {
+      const password = byId("newUserPassword").value;
+      if (password !== byId("confirmUserPassword").value) throw new Error("两次输入的新密码不一致");
+      if (!state.passwordUser) throw new Error("没有选中用户");
+      await api("/admin/api/user_action", {
+        method: "POST",
+        body: JSON.stringify({ user_id: state.passwordUser.id, action: "change_password", new_password: password }),
+      });
+      byId("passwordDialog").close();
+      notify("用户密码已修改，原登录会话已失效");
+      await Promise.all([loadUsers(state.users.page), loadAudit(1)]);
+    });
+  });
+
+  byId("releaseHistoryForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    void run(async () => {
+      const historyId = Number(byId("historyId").value);
+      await api(`/admin/api/release_history/${historyId}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          latest_version: byId("historyVersion").value.trim(),
+          minimum_version: byId("historyMinimumVersion").value.trim(),
+          title: byId("historyTitle").value.trim(),
+          download_url: byId("historyDownloadUrl").value.trim(),
+          sha256: byId("historySha256").value.trim(),
+          notes: byId("historyNotes").value.trim(),
+          is_mandatory: byId("historyMandatory").checked,
+        }),
+      });
+      byId("releaseHistoryDialog").close();
+      notify("历史版本已更新");
+      await Promise.all([loadSummary(), loadAudit(1)]);
+    });
+  });
+
   byId("codeForm").addEventListener("submit", (event) => void run(async () => {
     event.preventDefault();
     const submit = event.submitter;
@@ -600,13 +710,18 @@
     await refreshAll();
   }));
   byId("logoutButton").addEventListener("click", () => void run(async () => {
-    await api("/admin/logout", { method: "POST", body: "{}" });
-    window.location.href = "/admin";
+    const result = await api("/admin/logout", { method: "POST", body: "{}" });
+    window.location.replace(result.redirect_url || "/");
   }));
   byId("closeUserDetail").addEventListener("click", () => byId("userDetailDialog").close());
   byId("userDetailDialog").addEventListener("click", (event) => {
     if (event.target === byId("userDetailDialog")) byId("userDetailDialog").close();
   });
+  byId("closePasswordDialog").addEventListener("click", () => byId("passwordDialog").close());
+  byId("closeReleaseHistoryDialog").addEventListener("click", () => byId("releaseHistoryDialog").close());
+  [byId("passwordDialog"), byId("releaseHistoryDialog")].forEach((dialog) => dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  }));
 
   const navLinks = [...document.querySelectorAll(".admin-sidebar nav a")];
   const sections = navLinks.map((link) => document.querySelector(link.getAttribute("href"))).filter(Boolean);

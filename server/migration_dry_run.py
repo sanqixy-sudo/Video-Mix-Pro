@@ -69,6 +69,11 @@ EXPECTED_SCHEMA_COLUMNS = {
         "published_at": "TEXT",
         "published_by": "TEXT",
     },
+    "site_pricing": {
+        "plan": "TEXT",
+        "price_display": "TEXT",
+        "updated_at": "TEXT",
+    },
 }
 
 PASSWORD_COLUMNS = ("password_hash", "password", "password_sha256", "passwd", "pwd")

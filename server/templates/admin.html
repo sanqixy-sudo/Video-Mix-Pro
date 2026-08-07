@@ -7,7 +7,7 @@
   <meta name="csrf-token" content="__CSRF_TOKEN__">
   <title>Video Mix Pro 管理后台</title>
   <link rel="icon" href="/static/brand/favicon.ico">
-  <link rel="stylesheet" href="/static/admin.css?v=20260807-021">
+  <link rel="stylesheet" href="/static/admin.css?v=20260807-022">
 </head>
 <body class="admin-page">
   <div class="admin-ambient" aria-hidden="true"><i></i><i></i><b></b></div>
@@ -19,6 +19,7 @@
         <a href="#users"><span>◎</span>用户与设备</a>
         <a href="#codes"><span>◇</span>兑换码</a>
         <a href="#release"><span>↑</span>版本发布</a>
+        <a href="#pricing"><span>¥</span>官网定价</a>
         <a href="#audit"><span>≡</span>审计日志</a>
       </nav>
       <div class="sidebar-meta"><span class="online-dot"></span><div><strong>服务在线</strong><small>__BUILD_ID__</small></div></div>
@@ -98,17 +99,30 @@
         <div class="section-title"><div><span>RELEASE CHANNEL</span><h2>稳定版发布</h2></div><p>填写 GitHub Releases 直链后，客户端按本地版本与最新版比较，不需要重新打官网镜像。</p></div>
         <form class="admin-panel release-form" id="releaseForm">
           <div class="field-grid three">
-            <label><span>最新版</span><input id="latestVersion" placeholder="0.2.0" required></label>
-            <label><span>最低支持版本</span><input id="minimumVersion" placeholder="0.2.0" required></label>
-            <label><span>发布标题</span><input id="releaseTitleInput" placeholder="Video Mix Pro 0.2.0"></label>
+            <label><span>最新版</span><input id="latestVersion" placeholder="0.2.1" required></label>
+            <label><span>最低支持版本</span><input id="minimumVersion" placeholder="0.2.1" required></label>
+            <label><span>发布标题</span><input id="releaseTitleInput" placeholder="Video Mix Pro 0.2.1"></label>
           </div>
-          <label><span>GitHub 直接下载链接</span><input id="downloadUrl" type="url" placeholder="https://github.com/owner/repo/releases/download/v0.2.0/VideoMixPro.exe"></label>
+          <label><span>GitHub 直接下载链接</span><input id="downloadUrl" type="url" placeholder="https://github.com/owner/repo/releases/download/v0.2.1/VideoMixPro.exe"></label>
           <label><span>SHA-256（可选）</span><input id="releaseSha256" maxlength="64" placeholder="64 位校验值"></label>
           <label><span>更新说明</span><textarea id="releaseNotesInput" rows="6" placeholder="每行一项更新内容"></textarea></label>
           <div class="form-footer"><label class="switch-row"><input id="mandatoryUpdate" type="checkbox"><i></i><span>标记为强制更新</span></label><div><span id="releaseUpdatedAt" class="muted-copy"></span><button class="admin-button primary" type="submit">保存发布信息</button></div></div>
         </form>
         <h3 class="subsection-title">发布历史</h3>
         <div class="admin-table-shell" id="releaseHistoryTable"><div class="loading-state">正在加载发布历史…</div></div>
+      </section>
+
+      <section class="admin-section" id="pricing">
+        <div class="section-title"><div><span>WEBSITE PRICING</span><h2>官网价格展示</h2></div><p>这里只控制官网显示文字，不接支付、不自动开通会员；留空时官网显示“后台配置”。</p></div>
+        <form class="admin-panel pricing-form" id="pricingForm">
+          <div class="pricing-admin-grid">
+            <label><span>月度价格</span><input id="priceMonth" maxlength="40" placeholder="例如：¥29"></label>
+            <label><span>季度价格</span><input id="priceQuarter" maxlength="40" placeholder="例如：¥79"></label>
+            <label><span>年度价格</span><input id="priceYear" maxlength="40" placeholder="例如：¥199"></label>
+            <label><span>永久价格</span><input id="pricePermanent" maxlength="40" placeholder="例如：¥399"></label>
+          </div>
+          <div class="form-footer"><span class="muted-copy">支持人民币符号、促销文字或“联系客服”等纯展示内容</span><button class="admin-button primary" type="submit">保存官网定价</button></div>
+        </form>
       </section>
 
       <section class="admin-section" id="audit">
@@ -126,7 +140,32 @@
     <div class="dialog-head"><div><span>USER PROFILE</span><h2 id="detailUsername">用户详情</h2></div><button class="admin-button ghost" id="closeUserDetail" type="button">关闭</button></div>
     <div id="userDetailBody"><div class="loading-state">正在加载详情…</div></div>
   </dialog>
+  <dialog class="detail-dialog compact-dialog" id="passwordDialog">
+    <form id="passwordForm">
+      <div class="dialog-head"><div><span>RESET PASSWORD</span><h2 id="passwordDialogTitle">修改用户密码</h2></div><button class="admin-button ghost" id="closePasswordDialog" type="button">关闭</button></div>
+      <div class="dialog-form-body">
+        <p class="dialog-help">保存后该用户的现有登录会话会全部失效，需要使用新密码重新登录。</p>
+        <label><span>新密码</span><input id="newUserPassword" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label>
+        <label><span>确认新密码</span><input id="confirmUserPassword" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label>
+        <button class="admin-button primary" type="submit">保存新密码</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog class="detail-dialog release-history-dialog" id="releaseHistoryDialog">
+    <form id="releaseHistoryForm">
+      <div class="dialog-head"><div><span>EDIT RELEASE HISTORY</span><h2>编辑历史版本</h2></div><button class="admin-button ghost" id="closeReleaseHistoryDialog" type="button">关闭</button></div>
+      <div class="dialog-form-body">
+        <input id="historyId" type="hidden">
+        <div class="field-grid two"><label><span>版本</span><input id="historyVersion" required></label><label><span>最低支持版本</span><input id="historyMinimumVersion" required></label></div>
+        <label><span>发布标题</span><input id="historyTitle"></label>
+        <label><span>GitHub 直接下载链接</span><input id="historyDownloadUrl" type="url"></label>
+        <label><span>SHA-256（可选）</span><input id="historySha256" maxlength="64"></label>
+        <label><span>更新说明</span><textarea id="historyNotes" rows="5"></textarea></label>
+        <div class="form-footer"><label class="switch-row"><input id="historyMandatory" type="checkbox"><i></i><span>强制更新记录</span></label><button class="admin-button primary" type="submit">保存历史版本</button></div>
+      </div>
+    </form>
+  </dialog>
   <div class="toast" id="toast" role="status"></div>
-  <script src="/static/admin.js?v=20260807-021" defer></script>
+  <script src="/static/admin.js?v=20260807-022" defer></script>
 </body>
 </html>

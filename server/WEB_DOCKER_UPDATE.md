@@ -6,11 +6,11 @@
 
 ```bash
 # 在本机上传，按实际服务器和目录替换
-scp VideoMixPro_web_docker_update_0.2.1_20260807.zip root@SERVER_IP:/opt/video-mix-member/
+scp VideoMixPro_web_docker_update_0.2.2_20260807.zip root@SERVER_IP:/opt/video-mix-member/
 
 # 在服务器执行
 cd /opt/video-mix-member
-unzip -o VideoMixPro_web_docker_update_0.2.1_20260807.zip -d web_docker_update
+unzip -o VideoMixPro_web_docker_update_0.2.2_20260807.zip -d web_docker_update
 cd web_docker_update
 ```
 
@@ -52,8 +52,8 @@ export ADMIN_USER='your-admin-user'
 export ADMIN_PASSWORD='replace-with-a-strong-password-at-least-12-chars'
 export ADMIN_TOKEN='replace-with-long-random-token-at-least-32-chars'
 export CORS_ALLOW_ORIGINS='https://tauri.localhost,http://tauri.localhost,tauri://localhost'
-export APP_VERSION='0.2.0'
-export SERVER_VERSION='0.2.1'
+export APP_VERSION='0.2.1'
+export SERVER_VERSION='0.2.2'
 export DEVICE_REBIND_COOLDOWN_HOURS='6'
 ```
 

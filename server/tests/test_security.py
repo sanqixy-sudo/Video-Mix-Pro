@@ -469,8 +469,85 @@ class SecurityFlowTests(unittest.TestCase):
 
         logged_out = client.post("/admin/logout", json={}, headers=headers)
         self.assertEqual(logged_out.status_code, 200, logged_out.text)
+        self.assertEqual(logged_out.json()["redirect_url"], "/")
         self.assertNotIn('name="csrf-token"', client.get("/admin").text)
         client.close()
+
+    def test_admin_password_pricing_release_history_and_private_entry(self) -> None:
+        username = self.unique_user("admin-tools")
+        login = self.register_and_login(username, "admin-tools-device")
+        with self.server.db() as conn:
+            user_id = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()["id"]
+
+        admin, headers = self.login_admin()
+        try:
+            changed = admin.post(
+                "/admin/api/user_action",
+                json={"user_id": user_id, "action": "change_password", "new_password": "ChangedPass456!"},
+                headers=headers,
+            )
+            self.assertEqual(changed.status_code, 200, changed.text)
+            old_session = self.client.post(
+                "/api/auth/verify", json={"token": login["token"], "device_id": "admin-tools-device"}
+            )
+            self.assertEqual(old_session.status_code, 401, old_session.text)
+            old_password = self.client.post(
+                "/api/auth/login",
+                json={"username": username, "password": "UserPass123!", "device_id": "admin-tools-device"},
+            )
+            self.assertEqual(old_password.status_code, 401, old_password.text)
+            new_password = self.client.post(
+                "/api/auth/login",
+                json={"username": username, "password": "ChangedPass456!", "device_id": "admin-tools-device"},
+            )
+            self.assertEqual(new_password.status_code, 200, new_password.text)
+
+            prices = {"month": "¥29", "quarter": "¥79", "year": "¥199", "permanent": "¥399"}
+            pricing = admin.post("/admin/api/pricing", json={"prices": prices}, headers=headers)
+            self.assertEqual(pricing.status_code, 200, pricing.text)
+            public_pricing = self.client.get("/api/site/pricing")
+            self.assertEqual(public_pricing.status_code, 200, public_pricing.text)
+            self.assertEqual(
+                {item["plan"]: item["price_display"] for item in public_pricing.json()["items"]}, prices
+            )
+
+            published = admin.post(
+                "/admin/api/release",
+                json={
+                    "latest_version": "0.4.0",
+                    "minimum_version": "0.2.0",
+                    "title": "Video Mix Pro 0.4.0",
+                    "download_url": "https://github.com/example/video-mix/releases/download/v0.4.0/app.exe",
+                },
+                headers=headers,
+            )
+            self.assertEqual(published.status_code, 200, published.text)
+            summary = admin.get("/admin/api/summary").json()
+            history = next(item for item in summary["release_history"] if item["latest_version"] == "0.4.0")
+            edited = admin.put(
+                f"/admin/api/release_history/{history['id']}",
+                json={
+                    "latest_version": "0.4.0",
+                    "minimum_version": "0.2.0",
+                    "title": "已修正的历史标题",
+                    "notes": "修正历史说明",
+                    "download_url": "https://github.com/example/video-mix/releases/download/v0.4.0/app.exe",
+                },
+                headers=headers,
+            )
+            self.assertEqual(edited.status_code, 200, edited.text)
+            self.assertEqual(self.client.get("/api/update/latest").json()["title"], "Video Mix Pro 0.4.0")
+            deleted = admin.delete(f"/admin/api/release_history/{history['id']}", headers=headers)
+            self.assertEqual(deleted.status_code, 200, deleted.text)
+            with self.server.db() as conn:
+                self.assertIsNone(conn.execute("SELECT id FROM app_release_history WHERE id=?", (history["id"],)).fetchone())
+
+            site = self.client.get("/")
+            self.assertEqual(site.status_code, 200, site.text)
+            self.assertNotIn('href="/admin"', site.text)
+            self.assertIn("v0.4.0", site.text)
+        finally:
+            admin.close()
 
     def test_rate_limit_and_production_health_redaction(self) -> None:
         self.server.check_rate_limit("unit-rate", 2, 60)
