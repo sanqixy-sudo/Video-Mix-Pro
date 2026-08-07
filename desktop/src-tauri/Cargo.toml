@@ -1,0 +1,26 @@
+[package]
+name = "video-mix-pro"
+version = "0.2.0"
+description = "Video Mix Pro Windows desktop client"
+authors = ["Video Mix Pro"]
+edition = "2021"
+
+[lib]
+name = "video_mix_pro_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.4", features = [] }
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "2.2.0", features = ["protocol-asset"] }
+tauri-plugin-shell = "2.2.0"
+tauri-plugin-fs = "2.2.0"
+tauri-plugin-dialog = "2.2.0"
+dirs = "5.0"

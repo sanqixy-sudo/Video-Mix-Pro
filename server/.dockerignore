@@ -1,0 +1,13 @@
+__pycache__
+*.pyc
+*.log
+*.tmp
+*.bak
+.env
+.env.*
+
+data
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/backups

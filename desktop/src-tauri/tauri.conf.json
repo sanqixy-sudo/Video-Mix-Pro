@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Video Mix Pro",
+  "version": "0.2.0",
+  "identifier": "com.videomix.pro",
+  "build": {
+    "beforeDevCommand": "npm.cmd run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm.cmd run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Video Mix Pro",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 980,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "resources": ["bin"],
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": ["SimpChinese"],
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "startMenuFolder": "Video Mix Pro",
+        "installerHooks": "installer-hooks.nsh"
+      }
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "video-mix-pro",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "tauri": "tauri",
+    "download:ffmpeg": "powershell -ExecutionPolicy Bypass -File scripts/download_ffmpeg.ps1"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.2.0",
+    "@tauri-apps/plugin-shell": "2.2.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.2.0",
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.2"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.62.2",
+    "@tauri-apps/cli-win32-x64-msvc": "^2.11.3"
+  }
+}

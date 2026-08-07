@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#050506">
+  <meta name="description" content="Video Mix Pro：面向批量视频生产的本地桌面工作流，支持混剪、套框、飘动水印、任务队列和硬件编码。">
+  <title>Video Mix Pro · 批量视频工作流</title>
+  <link rel="icon" href="/static/brand/favicon.ico">
+  <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+  <div class="ambient" aria-hidden="true">
+    <div class="ambient-blob blob-primary"></div>
+    <div class="ambient-blob blob-left"></div>
+    <div class="ambient-blob blob-right"></div>
+    <div class="ambient-grid"></div>
+    <div class="ambient-noise"></div>
+  </div>
+
+  <header class="site-header" id="top">
+    <nav class="nav container" aria-label="主导航">
+      <a class="brand" href="#top" aria-label="Video Mix Pro 首页">
+        <img src="/static/brand/logo-horizontal.png" alt="Video Mix Pro">
+      </a>
+      <button class="mobile-menu-button" type="button" aria-expanded="false" aria-controls="siteMenu">
+        <span></span><span></span>
+        <span class="sr-only">打开导航</span>
+      </button>
+      <div class="nav-menu" id="siteMenu">
+        <a href="#features">能力</a>
+        <a href="#workflow">工作流</a>
+        <a href="#release">更新</a>
+        <a href="#faq">常见问题</a>
+        <a class="button button-small button-secondary" href="/admin">管理后台</a>
+        <a class="button button-small button-primary download-link" href="#release">下载 Windows 版</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero container">
+      <div class="hero-copy" data-parallax>
+        <div class="eyebrow reveal">
+          <span class="status-dot"></span>
+          <span>Windows 本地视频工作流</span>
+          <span class="eyebrow-version">v__APP_VERSION__</span>
+        </div>
+        <h1 class="reveal reveal-delay-1">让批量视频生产，<br><span>像一条可靠的流水线。</span></h1>
+        <p class="hero-lead reveal reveal-delay-2">从素材扫描、自动组合、套框、水印到任务排队，Video Mix Pro 把重复操作收进一个精确、可追踪的桌面工作台。</p>
+        <div class="hero-actions reveal reveal-delay-3">
+          <a class="button button-primary button-large download-link" href="#release">
+            <span>下载中文安装版</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14"/></svg>
+          </a>
+          <a class="button button-secondary button-large" href="#features">查看功能</a>
+        </div>
+        <div class="hero-meta reveal reveal-delay-4">
+          <span>本地处理</span><i></i><span>中文安装向导</span><i></i><span>Intel / NVIDIA / AMD</span>
+        </div>
+      </div>
+
+      <div class="product-stage reveal reveal-delay-2 spotlight-card" data-spotlight>
+        <div class="stage-glow"></div>
+        <div class="app-window">
+          <div class="app-titlebar">
+            <div class="app-brand"><img src="/static/brand/logo-mark.png" alt=""><span>Video Mix Pro</span></div>
+            <div class="window-controls"><span></span><span></span><span></span></div>
+          </div>
+          <div class="app-body">
+            <aside class="app-sidebar" aria-hidden="true">
+              <div class="mini-nav active"><b>⌁</b><span>批量混剪</span></div>
+              <div class="mini-nav"><b>◇</b><span>套外框</span></div>
+              <div class="mini-nav"><b>◌</b><span>飘动水印</span></div>
+              <div class="mini-nav"><b>≡</b><span>任务中心</span></div>
+              <div class="mini-status"><i></i><span>服务正常</span></div>
+            </aside>
+            <div class="app-content">
+              <div class="app-heading"><div><span>批量混剪</span><small>配置一次，持续排队生成</small></div><em>高级模式</em></div>
+              <div class="workflow-card featured">
+                <div class="step-number">01</div>
+                <div><strong>选择素材与输出位置</strong><small>已扫描 19 个主素材</small></div>
+                <span class="success-chip">准备完成</span>
+              </div>
+              <div class="workflow-row">
+                <div class="workflow-card"><span>计划生成</span><strong>100</strong><small>条视频</small></div>
+                <div class="workflow-card"><span>理论组合</span><strong>5,814</strong><small>种变化</small></div>
+                <div class="workflow-card"><span>处理队列</span><strong>4</strong><small>项等待</small></div>
+              </div>
+              <div class="progress-card"><div><span>当前任务 · product_0042.mp4</span><strong>72%</strong></div><div class="progress-track"><i></i></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section container" id="features">
+      <div class="section-heading reveal">
+        <div><span class="section-label">CORE CAPABILITIES</span><h2>从素材到成片，都在一个工作台。</h2></div>
+        <p>保持专业工具需要的信息密度，同时让每一步状态清晰、错误可恢复、输出可预测。</p>
+      </div>
+      <div class="bento-grid">
+        <article class="bento-card bento-hero spotlight-card reveal" data-spotlight>
+          <div class="card-index">01 / MIX</div>
+          <div class="card-icon">⌁</div>
+          <h3>批量混剪与组合去重</h3>
+          <p>按片段数量、片头片尾和插片规则自动构建组合，重复组合可自动扰动参数，持续输出而不打乱素材结构。</p>
+          <div class="combination-visual" aria-hidden="true">
+            <span>A1</span><span>B4</span><span>C2</span><i></i><b>5,814</b><small>组合空间</small>
+          </div>
+        </article>
+        <article class="bento-card spotlight-card reveal reveal-delay-1" data-spotlight>
+          <div class="card-index">02 / FRAME</div><div class="card-icon">◇</div>
+          <h3>可视化套框</h3><p>拖拽、缩放、锁定比例，预览与最终输出保持一致。</p>
+          <div class="frame-visual"><div><span></span></div><i></i><i></i><i></i><i></i></div>
+        </article>
+        <article class="bento-card spotlight-card reveal reveal-delay-2" data-spotlight>
+          <div class="card-index">03 / WATERMARK</div><div class="card-icon">◌</div>
+          <h3>飘动水印</h3><p>整文件夹批处理，Logo 在画面边界间自然反弹，原文件名保持不变。</p>
+          <div class="watermark-visual"><img src="/static/brand/logo-mark.png" alt=""></div>
+        </article>
+        <article class="bento-card bento-wide spotlight-card reveal" data-spotlight>
+          <div class="card-copy"><div class="card-index">04 / QUEUE</div><div class="card-icon">≡</div><h3>任务队列，不阻断当前工作</h3><p>继续添加下一批任务，统一查看进度、取消与失败重试。</p></div>
+          <div class="queue-visual" aria-hidden="true">
+            <div><i class="running"></i><span>夏季素材混剪</span><b>72%</b></div>
+            <div><i></i><span>产品套框批次</span><b>等待</b></div>
+            <div><i></i><span>品牌水印版</span><b>等待</b></div>
+          </div>
+        </article>
+        <article class="bento-card spotlight-card reveal reveal-delay-1" data-spotlight>
+          <div class="card-index">05 / ENGINE</div><div class="card-icon">⌘</div>
+          <h3>按本机能力推荐编码</h3><p>先检测真实显卡与编码可用性，再推荐 Intel QSV、NVIDIA NVENC、AMD AMF 或 CPU。</p>
+          <div class="engine-chips"><span>QSV</span><span>NVENC</span><span>AMF</span><span>x264</span></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section workflow-section" id="workflow">
+      <div class="container">
+        <div class="section-heading centered reveal"><div><span class="section-label">A CLEAR WORKFLOW</span><h2>三步进入稳定生产。</h2></div><p>把复杂配置拆成明确状态，让大批量任务也有确定感。</p></div>
+        <div class="steps-grid">
+          <article class="step-card reveal"><span>01</span><h3>选择文件夹</h3><p>自动扫描支持的素材与结构，不需要逐个添加文件。</p></article>
+          <article class="step-card reveal reveal-delay-1"><span>02</span><h3>设置规则</h3><p>确认数量、编码、命名与输出策略，实时显示阻塞问题。</p></article>
+          <article class="step-card reveal reveal-delay-2"><span>03</span><h3>加入队列</h3><p>后台持续处理，保留日志、进度与可恢复的失败项。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section container" id="release">
+      <div class="release-card spotlight-card reveal" data-spotlight>
+        <div class="release-copy">
+          <span class="section-label">LATEST RELEASE</span>
+          <h2 id="releaseTitle">Video Mix Pro __APP_VERSION__</h2>
+          <p id="releaseNotes">正在读取最新版本信息…</p>
+          <div class="release-tags"><span>Windows 10 / 11</span><span>x64</span><span>中文安装</span></div>
+        </div>
+        <div class="release-action">
+          <div><small>当前稳定版</small><strong id="releaseVersion">v__APP_VERSION__</strong></div>
+          <a class="button button-primary button-large download-link" id="releaseDownload" href="#release">下载安装包</a>
+          <small id="releaseChecksum">发布链接由官网后台维护</small>
+        </div>
+      </div>
+    </section>
+
+    <section class="section container faq-section" id="faq">
+      <div class="section-heading reveal"><div><span class="section-label">QUESTIONS</span><h2>常见问题</h2></div></div>
+      <div class="faq-list">
+        <details class="reveal"><summary>视频会上传到服务器吗？<span>+</span></summary><p>不会。素材扫描、FFmpeg 处理和输出都在本机完成；服务器只负责账号授权、设备绑定和版本信息。</p></details>
+        <details class="reveal"><summary>换电脑后如何登录？<span>+</span></summary><p>使用原账号登录即可完成换绑。换绑成功后会进入 6 小时保护期，防止账号被频繁转移；如遇特殊情况可联系管理员解除冷却。</p></details>
+        <details class="reveal"><summary>以后如何更新？<span>+</span></summary><p>客户端启动时会检查官网维护的稳定版本。发现新版后，可直接打开 GitHub 安装包链接并覆盖安装，现有设置会保留。</p></details>
+        <details class="reveal"><summary>没有独立显卡可以使用吗？<span>+</span></summary><p>可以。软件会验证实际可用的编码器；没有可用硬件编码时自动提供 CPU x264 方案，不会错误推荐不存在的显卡。</p></details>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <a class="brand footer-brand" href="#top"><img src="/static/brand/logo-horizontal.png" alt="Video Mix Pro"></a>
+      <p>精确、可靠的本地视频生产工作流。</p>
+      <div><a href="/admin">管理后台</a><a href="/api/health">服务状态</a></div>
+    </div>
+  </footer>
+
+  <script src="/static/site.js" defer></script>
+</body>
+</html>

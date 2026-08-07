@@ -1,0 +1,42 @@
+services:
+  video-mix-member:
+    build: .
+    container_name: video-mix-member
+    restart: unless-stopped
+    init: true
+    read_only: true
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:57231:8000"
+    environment:
+      ENVIRONMENT: "${ENVIRONMENT:-production}"
+      ADMIN_USER: "${ADMIN_USER:-}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
+      ADMIN_TOKEN: "${ADMIN_TOKEN:-}"
+      ADMIN_USER_FILE: "${ADMIN_USER_FILE:-}"
+      ADMIN_PASSWORD_FILE: "${ADMIN_PASSWORD_FILE:-}"
+      ADMIN_TOKEN_FILE: "${ADMIN_TOKEN_FILE:-}"
+      DB_PATH: "/app/data/app.db"
+      SESSION_TTL_DAYS: "${SESSION_TTL_DAYS:-30}"
+      SESSION_IDLE_HOURS: "${SESSION_IDLE_HOURS:-72}"
+      APP_VERSION: "${APP_VERSION:-0.2.0}"
+      SERVER_VERSION: "${SERVER_VERSION:-0.2.1}"
+      DEVICE_REBIND_COOLDOWN_HOURS: "${DEVICE_REBIND_COOLDOWN_HOURS:-6}"
+      ADMIN_SESSION_HOURS: "${ADMIN_SESSION_HOURS:-8}"
+      ADMIN_COOKIE_SECURE: "${ADMIN_COOKIE_SECURE:-true}"
+      TRUST_PROXY_HEADERS: "${TRUST_PROXY_HEADERS:-false}"
+      RATE_LIMIT_ENABLED: "${RATE_LIMIT_ENABLED:-true}"
+      CORS_ALLOW_ORIGINS: "${CORS_ALLOW_ORIGINS:-http://tauri.localhost,https://tauri.localhost,tauri://localhost}"
+    volumes:
+      - ./data:/app/data
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    stop_grace_period: 30s

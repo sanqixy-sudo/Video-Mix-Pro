@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#050506">
+  <meta name="csrf-token" content="__CSRF_TOKEN__">
+  <title>Video Mix Pro 管理后台</title>
+  <link rel="icon" href="/static/brand/favicon.ico">
+  <link rel="stylesheet" href="/static/admin.css?v=20260807-021">
+</head>
+<body class="admin-page">
+  <div class="admin-ambient" aria-hidden="true"><i></i><i></i><b></b></div>
+  <div class="admin-layout">
+    <aside class="admin-sidebar">
+      <a class="admin-brand" href="/" target="_blank" rel="noopener"><img src="/static/brand/logo-horizontal.png" alt="Video Mix Pro"></a>
+      <nav aria-label="管理导航">
+        <a href="#overview" class="active"><span>⌂</span>总览</a>
+        <a href="#users"><span>◎</span>用户与设备</a>
+        <a href="#codes"><span>◇</span>兑换码</a>
+        <a href="#release"><span>↑</span>版本发布</a>
+        <a href="#audit"><span>≡</span>审计日志</a>
+      </nav>
+      <div class="sidebar-meta"><span class="online-dot"></span><div><strong>服务在线</strong><small>__BUILD_ID__</small></div></div>
+    </aside>
+
+    <main class="admin-main">
+      <header class="admin-topbar">
+        <div><span>CONTROL CENTER</span><h1>运营控制台</h1></div>
+        <div class="topbar-actions"><button class="admin-button ghost" id="refreshButton">刷新数据</button><button class="admin-button danger ghost" id="logoutButton">退出</button></div>
+      </header>
+      <div class="admin-error" id="adminError" role="alert"></div>
+
+      <section class="admin-section" id="overview">
+        <div class="section-title"><div><span>OVERVIEW</span><h2>运行总览</h2></div><p>会员、设备、兑换与发布状态的实时摘要。</p></div>
+        <div class="metric-grid metric-grid-wide">
+          <article><span>注册用户</span><strong id="metricUsers">—</strong><small>累计账号</small></article>
+          <article><span>有效会员</span><strong id="metricMembers">—</strong><small>当前可用</small></article>
+          <article><span>冷却设备</span><strong id="metricCooldowns">—</strong><small>六小时保护中</small></article>
+          <article><span>可用兑换码</span><strong id="metricCodes">—</strong><small>尚未使用</small></article>
+          <article><span>今日注册</span><strong id="metricRegistrations">—</strong><small>UTC 自然日</small></article>
+          <article><span>今日兑换</span><strong id="metricRedeemed">—</strong><small>UTC 自然日</small></article>
+          <article><span>7 天内到期</span><strong id="metricExpiring">—</strong><small>需要续费关注</small></article>
+          <article><span>异常兑换码</span><strong id="metricCodeIssues">—</strong><small>已停用或已过期</small></article>
+        </div>
+      </section>
+
+      <section class="admin-section" id="users">
+        <div class="section-title"><div><span>MEMBERS & DEVICES</span><h2>用户与设备</h2></div><p>筛选、批量维护会员状态；解绑设备与解除换绑冷却是两个独立操作。</p></div>
+        <div class="admin-panel filter-toolbar">
+          <label class="search-field"><span>搜索</span><input id="userSearch" placeholder="账号、设备名或设备码"></label>
+          <label><span>会员状态</span><select id="userStatus"><option value="all">全部状态</option><option value="active">有效会员</option><option value="inactive">非会员 / 已到期</option><option value="expiring">7 天内到期</option><option value="banned">已封禁</option></select></label>
+          <label><span>会员类型</span><select id="userPlan"><option value="all">全部类型</option><option value="month">月会员</option><option value="quarter">季会员</option><option value="half_year">半年会员</option><option value="year">一年会员</option><option value="permanent">永久会员</option><option value="custom">自定义天数</option></select></label>
+          <label><span>设备状态</span><select id="userDevice"><option value="all">全部设备</option><option value="bound">已绑定</option><option value="unbound">未绑定</option><option value="cooldown">换绑冷却中</option></select></label>
+        </div>
+        <div class="admin-panel batch-toolbar">
+          <strong><span id="selectedUsersCount">0</span> 位已选择</strong>
+          <select id="userBatchAction" aria-label="用户批量操作"><option value="grant">批量开通会员</option><option value="revoke">批量撤销会员</option><option value="ban">批量封禁</option><option value="unban">批量解封</option><option value="reset_device_cooldown">批量解除冷却</option></select>
+          <select id="userBatchPlan" aria-label="批量会员类型"><option value="month">月会员</option><option value="quarter">季会员</option><option value="half_year">半年会员</option><option value="year">一年会员</option><option value="permanent">永久会员</option><option value="custom">自定义天数</option></select>
+          <input id="userBatchCustomDays" type="number" min="1" max="36500" value="30" aria-label="自定义天数" hidden>
+          <button class="admin-button primary" id="runUserBatchButton" type="button">执行操作</button>
+          <button class="admin-button ghost push-right" id="cleanupSmokeButton" type="button">清理测试数据</button>
+        </div>
+        <div class="admin-table-shell" id="usersTable"><div class="loading-state">正在加载用户…</div></div>
+        <div class="pagination" id="usersPagination"></div>
+      </section>
+
+      <section class="admin-section" id="codes">
+        <div class="section-title"><div><span>REDEEM CODES</span><h2>兑换码</h2></div><p>按批次生成、设置失效时间，并保留已使用 Key 的账号快照。</p></div>
+        <div class="codes-layout">
+          <form class="admin-panel code-form" id="codeForm">
+            <div class="field-grid two"><label><span>会员类型</span><select id="plan"><option value="month">月会员</option><option value="quarter">季会员</option><option value="half_year">半年会员</option><option value="year">一年会员</option><option value="permanent">永久会员</option><option value="custom">自定义天数</option></select></label><label><span>生成数量</span><input id="codeCount" type="number" min="1" max="500" value="10"></label></div>
+            <label id="customDaysField" hidden><span>自定义天数</span><input id="customDays" type="number" min="1" max="36500" value="30"></label>
+            <label><span>Key 失效时间（可选）</span><input id="codeExpiresAt" type="datetime-local"></label>
+            <label><span>备注</span><input id="codeNote" placeholder="例如：8 月活动"></label>
+            <button class="admin-button primary" type="submit">生成兑换码</button>
+          </form>
+          <div class="admin-panel generated-codes"><div><span><strong>本次生成</strong><small id="generatedBatchId">等待新批次</small></span><button class="admin-button ghost small" id="copyCodesButton" type="button">复制</button></div><textarea id="newCodes" readonly placeholder="生成结果会显示在这里"></textarea></div>
+        </div>
+        <div class="admin-panel filter-toolbar codes-filter">
+          <label class="search-field"><span>搜索</span><input id="codeSearch" placeholder="兑换码、账号或备注"></label>
+          <label><span>状态</span><select id="codeStatus"><option value="all">全部状态</option><option value="available">可用</option><option value="used">已使用</option><option value="disabled">已停用</option><option value="expired">已过期</option></select></label>
+          <label><span>批次</span><select id="codeBatch"><option value="all">全部批次</option></select></label>
+          <a class="admin-button ghost button-link" id="exportCodesButton" href="/admin/api/codes/export">导出 CSV</a>
+        </div>
+        <div class="admin-panel batch-toolbar">
+          <strong><span id="selectedCodesCount">0</span> 个已选择</strong>
+          <button class="admin-button ghost" type="button" data-code-action="disable">停用</button>
+          <button class="admin-button ghost" type="button" data-code-action="enable">恢复</button>
+          <button class="admin-button danger ghost" type="button" data-code-action="delete_unused">删除未使用 Key</button>
+          <small>已使用 Key 永不删除</small>
+        </div>
+        <div class="admin-table-shell" id="codesTable"><div class="loading-state">正在加载兑换码…</div></div>
+        <div class="pagination" id="codesPagination"></div>
+      </section>
+
+      <section class="admin-section" id="release">
+        <div class="section-title"><div><span>RELEASE CHANNEL</span><h2>稳定版发布</h2></div><p>填写 GitHub Releases 直链后，客户端按本地版本与最新版比较，不需要重新打官网镜像。</p></div>
+        <form class="admin-panel release-form" id="releaseForm">
+          <div class="field-grid three">
+            <label><span>最新版</span><input id="latestVersion" placeholder="0.2.0" required></label>
+            <label><span>最低支持版本</span><input id="minimumVersion" placeholder="0.2.0" required></label>
+            <label><span>发布标题</span><input id="releaseTitleInput" placeholder="Video Mix Pro 0.2.0"></label>
+          </div>
+          <label><span>GitHub 直接下载链接</span><input id="downloadUrl" type="url" placeholder="https://github.com/owner/repo/releases/download/v0.2.0/VideoMixPro.exe"></label>
+          <label><span>SHA-256（可选）</span><input id="releaseSha256" maxlength="64" placeholder="64 位校验值"></label>
+          <label><span>更新说明</span><textarea id="releaseNotesInput" rows="6" placeholder="每行一项更新内容"></textarea></label>
+          <div class="form-footer"><label class="switch-row"><input id="mandatoryUpdate" type="checkbox"><i></i><span>标记为强制更新</span></label><div><span id="releaseUpdatedAt" class="muted-copy"></span><button class="admin-button primary" type="submit">保存发布信息</button></div></div>
+        </form>
+        <h3 class="subsection-title">发布历史</h3>
+        <div class="admin-table-shell" id="releaseHistoryTable"><div class="loading-state">正在加载发布历史…</div></div>
+      </section>
+
+      <section class="admin-section" id="audit">
+        <div class="section-title"><div><span>AUDIT TRAIL</span><h2>审计日志</h2></div><p>查询管理员登录、会员、设备、Key 和发布操作的留痕。</p></div>
+        <div class="admin-panel filter-toolbar audit-filter">
+          <label class="search-field"><span>搜索</span><input id="auditSearch" placeholder="操作者、目标、详情或 IP"></label>
+          <label><span>操作类型</span><select id="auditAction"><option value="all">全部操作</option></select></label>
+        </div>
+        <div class="admin-table-shell" id="auditTable"><div class="loading-state">正在加载审计日志…</div></div>
+        <div class="pagination" id="auditPagination"></div>
+      </section>
+    </main>
+  </div>
+  <dialog class="detail-dialog" id="userDetailDialog">
+    <div class="dialog-head"><div><span>USER PROFILE</span><h2 id="detailUsername">用户详情</h2></div><button class="admin-button ghost" id="closeUserDetail" type="button">关闭</button></div>
+    <div id="userDetailBody"><div class="loading-state">正在加载详情…</div></div>
+  </dialog>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/static/admin.js?v=20260807-021" defer></script>
+</body>
+</html>

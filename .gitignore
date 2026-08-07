@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.opencode/
+.agents/
+.venv/
+**/.venv/
+.pnpm-store/
+.portable-build-tools/
+.cargo-target/
+.cargo-target-*/
+
+# Frontend / Tauri build outputs
+desktop/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/schemas/
+
+# Runtime binaries downloaded locally
+desktop/src-tauri/bin/ffmpeg.exe
+desktop/src-tauri/bin/ffprobe.exe
+
+# Server runtime data, backups, and local secrets
+server/data/
+server/**/*.db
+server/**/*.sqlite
+server/**/*.sqlite3
+server/**/backups/
+.env
+.env.*
+!.env.example
+
+# Python caches
+__pycache__/
+*.py[cod]
+server/.test-venv/
+server/.qa-data*/
+
+# Release artifacts belong in GitHub Releases, not source control
+release/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.zip
+*.7z
+*.rar
+.DS_Store
+Thumbs.db
