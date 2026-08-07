@@ -8,7 +8,7 @@ import {
   ShieldCheck,
   Settings,
 } from "lucide-react";
-import type { PageKey, AuthState } from "../types";
+import type { PageKey, AuthState, UpdateInfo } from "../types";
 
 const navItems: Array<{ key: PageKey; label: string; icon: typeof LayoutDashboard }> = [
   { key: "mix", label: "批量混剪", icon: LayoutDashboard },
@@ -21,9 +21,10 @@ const navItems: Array<{ key: PageKey; label: string; icon: typeof LayoutDashboar
   { key: "settings", label: "设置", icon: Settings },
 ];
 
-export function Sidebar({ page, onChange, auth, pendingTasks }: { page: PageKey; onChange: (p: PageKey) => void; auth: AuthState; pendingTasks: number }) {
+export function Sidebar({ page, onChange, auth, pendingTasks, updateInfo, blocked = false }: { page: PageKey; onChange: (p: PageKey) => void; auth: AuthState; pendingTasks: number; updateInfo: UpdateInfo | null; blocked?: boolean }) {
+  const updateAvailable = Boolean(updateInfo?.updateAvailable);
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" inert={blocked ? true : undefined} aria-hidden={blocked || undefined}>
       <nav className="sidebar-nav">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -43,8 +44,22 @@ export function Sidebar({ page, onChange, auth, pendingTasks }: { page: PageKey;
         })}
       </nav>
       <div className="sidebar-footer">
-        <div className={auth.active ? "dot" : "dot inactive"} />
-        <span>{memberLabel(auth)}</span>
+        <div className="sidebar-member-status" title={memberLabel(auth)}>
+          <div className={auth.active ? "dot" : "dot inactive"} />
+          <span className="member-label">{memberLabel(auth)}</span>
+        </div>
+        {updateAvailable && (
+          <button
+            type="button"
+            className="sidebar-update-notice"
+            title={`发现新版本 v${updateInfo?.latestVersion}，点击查看`}
+            aria-label={`发现新版本 v${updateInfo?.latestVersion}，点击查看更新`}
+            onClick={() => onChange("settings")}
+          >
+            <span className="sidebar-update-dot" aria-hidden="true" />
+            <span className="sidebar-update-label">新版本</span>
+          </button>
+        )}
       </div>
     </aside>
   );

@@ -32,33 +32,36 @@ export function deviceName(): string {
   return "Windows-PC";
 }
 
-export async function registerAccount(serverUrl: string, username: string, password: string): Promise<void> {
-  await apiPost(serverUrl, "/api/auth/register", { username, password });
+export async function registerAccount(serverUrl: string, username: string, password: string, appVersion: string): Promise<void> {
+  await apiPost(serverUrl, "/api/auth/register", { username, password, app_version: appVersion });
 }
 
-export async function loginAccount(serverUrl: string, username: string, password: string): Promise<Partial<AuthState>> {
+export async function loginAccount(serverUrl: string, username: string, password: string, appVersion: string): Promise<Partial<AuthState>> {
   const data = await apiPost(serverUrl, "/api/auth/login", {
     username,
     password,
     device_id: getOrCreateDeviceId(),
     device_name: deviceName(),
+    app_version: appVersion,
   });
   return normalizeAuth(data, serverUrl, username);
 }
 
-export async function verifyAccount(serverUrl: string, token: string): Promise<Partial<AuthState>> {
+export async function verifyAccount(serverUrl: string, token: string, appVersion: string): Promise<Partial<AuthState>> {
   const data = await apiPost(serverUrl, "/api/auth/verify", {
     token,
     device_id: getOrCreateDeviceId(),
+    app_version: appVersion,
   });
   return normalizeAuth(data, serverUrl, data.username || "");
 }
 
-export async function redeemCode(serverUrl: string, token: string, code: string): Promise<Partial<AuthState>> {
+export async function redeemCode(serverUrl: string, token: string, code: string, appVersion: string): Promise<Partial<AuthState>> {
   const data = await apiPost(serverUrl, "/api/redeem", {
     token,
     device_id: getOrCreateDeviceId(),
     code,
+    app_version: appVersion,
   });
   return normalizeAuth(data, serverUrl, data.username || "");
 }

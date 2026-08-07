@@ -70,7 +70,8 @@ ADMIN_COOKIE_SECURE = env_bool("ADMIN_COOKIE_SECURE", IS_PRODUCTION)
 TRUST_PROXY_HEADERS = env_bool("TRUST_PROXY_HEADERS", False)
 RATE_LIMIT_ENABLED = env_bool("RATE_LIMIT_ENABLED", True)
 APP_VERSION = os.environ.get("APP_VERSION", "0.2.1").strip() or "0.2.1"
-SERVER_VERSION = os.environ.get("SERVER_VERSION", "0.2.2").strip() or "0.2.2"
+SERVER_VERSION = os.environ.get("SERVER_VERSION", "0.2.3").strip() or "0.2.3"
+LEGACY_CLIENT_VERSION = os.environ.get("LEGACY_CLIENT_VERSION", "0.2.0").strip() or "0.2.0"
 CORS_ALLOW_ORIGINS = [
     origin.strip()
     for origin in os.environ.get(
@@ -539,7 +540,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
             channel,latest_version,minimum_version,title,notes,download_url,sha256,is_mandatory,updated_at
         ) VALUES('stable',?,?,?,?,?,?,0,?)
         """,
-        (APP_VERSION, APP_VERSION, f"Video Mix Pro {APP_VERSION}", "", "", "", now),
+        (APP_VERSION, LEGACY_CLIENT_VERSION, f"Video Mix Pro {APP_VERSION}", "", "", "", now),
     )
     for pricing_plan in PRICING_PLANS:
         conn.execute(
@@ -661,7 +662,7 @@ def get_release(conn: sqlite3.Connection, channel: str = "stable") -> dict[str, 
     return {
         "channel": channel,
         "latest_version": APP_VERSION,
-        "minimum_version": APP_VERSION,
+        "minimum_version": LEGACY_CLIENT_VERSION,
         "title": f"Video Mix Pro {APP_VERSION}",
         "notes": "",
         "download_url": "",
@@ -687,14 +688,41 @@ def release_payload(release: dict[str, Any], current_version: str | None = None)
     }
     if current_version is not None:
         current = version_tuple(current_version)
+        update_available = current < version_tuple(latest)
         payload.update(
             {
                 "current_version": current_version,
-                "update_available": current < version_tuple(latest),
-                "required": current < version_tuple(minimum) or bool(release.get("is_mandatory")),
+                "update_available": update_available,
+                "required": current < version_tuple(minimum) or (update_available and bool(release.get("is_mandatory"))),
             }
         )
     return payload
+
+
+def enforce_supported_client(conn: sqlite3.Connection, app_version: str | None) -> None:
+    current_version = str(app_version or LEGACY_CLIENT_VERSION).strip()
+    if len(current_version) > 32:
+        raise HTTPException(400, "客户端版本号长度超出限制")
+    try:
+        current = version_tuple(current_version)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    release = get_release(conn)
+    minimum_version = str(release.get("minimum_version") or LEGACY_CLIENT_VERSION)
+    if current >= version_tuple(minimum_version):
+        return
+    raise HTTPException(
+        426,
+        detail={
+            "code": "CLIENT_UPDATE_REQUIRED",
+            "message": f"当前版本 v{current_version} 已停止支持，请更新至 v{release.get('latest_version') or APP_VERSION}",
+            "current_version": current_version,
+            "minimum_version": minimum_version,
+            "latest_version": str(release.get("latest_version") or APP_VERSION),
+            "title": str(release.get("title") or ""),
+            "download_url": str(release.get("download_url") or ""),
+        },
+    )
 
 
 def pricing_payload(conn: sqlite3.Connection) -> list[dict[str, str]]:
@@ -793,6 +821,7 @@ def check_update(request: Request, current_version: str, channel: str = "stable"
 class RegisterReq(BaseModel):
     username: str
     password: str
+    app_version: str | None = None
 
 
 class LoginReq(BaseModel):
@@ -800,17 +829,20 @@ class LoginReq(BaseModel):
     password: str
     device_id: str
     device_name: str | None = None
+    app_version: str | None = None
 
 
 class VerifyReq(BaseModel):
     token: str
     device_id: str
+    app_version: str | None = None
 
 
 class RedeemReq(BaseModel):
     token: str
     device_id: str
     code: str
+    app_version: str | None = None
 
 
 class LogoutReq(BaseModel):
@@ -832,6 +864,7 @@ def register(req: RegisterReq, request: Request):
 
     try:
         with db() as conn:
+            enforce_supported_client(conn, req.app_version)
             conn.execute(
                 "INSERT INTO users(username,password_hash,created_at,updated_at) VALUES(?,?,?,?)",
                 (username, hash_password(password), now_iso(), now_iso()),
@@ -850,6 +883,7 @@ def login(req: LoginReq, request: Request):
     if len(username) > 64 or len(req.password) > 256 or len(req.device_id) > 128 or len(req.device_name or "") > 128:
         raise HTTPException(400, "登录参数长度超出限制")
     with db() as conn:
+        enforce_supported_client(conn, req.app_version)
         row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
         user = row_to_dict(row)
         if not user:
@@ -937,6 +971,7 @@ def login(req: LoginReq, request: Request):
 def verify(req: VerifyReq, request: Request):
     check_rate_limit(f"verify:{client_ip(request)}", 120, 60)
     with db() as conn:
+        enforce_supported_client(conn, req.app_version)
         user = get_user_by_token(conn, req.token)
         if not user:
             raise HTTPException(401, "登录已失效")
@@ -965,6 +1000,7 @@ def redeem(req: RedeemReq, request: Request):
     if not code or len(code) > 64:
         raise HTTPException(400, "兑换码格式错误")
     with db() as conn:
+        enforce_supported_client(conn, req.app_version)
         conn.execute("BEGIN IMMEDIATE")
         user = get_user_by_token(conn, req.token)
         if not user:

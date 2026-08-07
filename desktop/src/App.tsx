@@ -5,6 +5,7 @@ import { recordPostSubmitEditSession, recordQueueOutcomes, recordStartAttempt, r
 import { ToastContainer, showToast } from "./components/Toast";
 import { TitleBar } from "./components/TitleBar";
 import { Sidebar } from "./components/Sidebar";
+import { ForcedUpdateDialog } from "./components/ForcedUpdateDialog";
 import { MixWorkflowPage, type ScanViewState } from "./pages/MixWorkflowPage";
 import { OverlayPage } from "./pages/OverlayPage";
 import { WatermarkPage } from "./pages/WatermarkPage";
@@ -22,6 +23,7 @@ const LAST_WATERMARK_KEY = "video_mix_last_watermark_v1";
 const LAST_DEDUP_KEY = "video_mix_last_dedup_v1";
 const LAST_PERFORMANCE_KEY = "video_mix_global_performance_v1";
 const MEMBERSHIP_VERIFY_INTERVAL_MS = 30 * 60 * 1000;
+const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
 export const defaultAuth: AuthState = {
   serverUrl: "https://videomix.7cloudvps.com",
@@ -233,7 +235,7 @@ export function App() {
         if (!merged.token) return;
         setAuthAction("verify");
         try {
-          const patch = await verifyAccount(merged.serverUrl, merged.token);
+          const patch = await verifyAccount(merged.serverUrl, merged.token, currentVersion);
           const verified = { ...merged, ...patch, token: merged.token };
           setAuth(verified);
           await saveAuthState(verified);
@@ -275,7 +277,11 @@ export function App() {
     }
   }, [auth.serverUrl]);
 
-  useEffect(() => { void checkUpdates(false); }, [checkUpdates]);
+  useEffect(() => {
+    void checkUpdates(false);
+    const timer = window.setInterval(() => { void checkUpdates(false); }, UPDATE_CHECK_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [checkUpdates]);
 
   useEffect(() => {
     if (page !== "tasks" && !taskStatus.running && taskStatus.pendingCount <= 0) return;
@@ -294,7 +300,7 @@ export function App() {
       if (periodicVerifyRunningRef.current) return;
       periodicVerifyRunningRef.current = true;
       try {
-        const patch = await verifyAccount(serverUrl, token);
+        const patch = await verifyAccount(serverUrl, token, currentVersion);
         setAuth((current) => {
           if (current.token !== token || current.serverUrl !== serverUrl) return current;
           const next = { ...current, ...patch, token };
@@ -325,7 +331,7 @@ export function App() {
 
     const timer = window.setInterval(() => { void verifyMembership(); }, MEMBERSHIP_VERIFY_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [auth.serverUrl, auth.token]);
+  }, [auth.serverUrl, auth.token, currentVersion]);
 
   useEffect(() => {
     if (!materials.sourceFolder.trim()) {
@@ -437,7 +443,7 @@ export function App() {
     setAuthError("");
     setAuthAction("login");
     try {
-      const patch = await loginAccount(auth.serverUrl, username, password);
+      const patch = await loginAccount(auth.serverUrl, username, password, currentVersion);
       const next = { ...auth, ...patch, username: patch.username || username };
       await persistAuth(next);
       showToast(next.active ? "success" : "warning", next.active ? "会员验证通过" : "账号已登录，请使用兑换码开通");
@@ -448,14 +454,14 @@ export function App() {
     } finally {
       setAuthAction(null);
     }
-  }, [auth, persistAuth]);
+  }, [auth, currentVersion, persistAuth]);
 
   const handleRegister = useCallback(async (username: string, password: string) => {
     setAuthError("");
     setAuthAction("register");
     try {
-      await registerAccount(auth.serverUrl, username, password);
-      const patch = await loginAccount(auth.serverUrl, username, password);
+      await registerAccount(auth.serverUrl, username, password, currentVersion);
+      const patch = await loginAccount(auth.serverUrl, username, password, currentVersion);
       const next = { ...auth, ...patch, username: patch.username || username };
       await persistAuth(next);
       showToast(next.active ? "success" : "warning", next.active ? "注册并登录成功" : "注册成功，请使用兑换码开通会员");
@@ -466,15 +472,15 @@ export function App() {
     } finally {
       setAuthAction(null);
     }
-  }, [auth, persistAuth]);
+  }, [auth, currentVersion, persistAuth]);
 
   const handleRedeem = useCallback(async (code: string) => {
     if (!auth.token) { showToast("warning", "请先登录账号"); return; }
     setAuthError("");
     setAuthAction("redeem");
     try {
-      const patch = await redeemCode(auth.serverUrl, auth.token, code);
-      const verified = await verifyAccount(auth.serverUrl, auth.token).catch(() => ({}));
+      const patch = await redeemCode(auth.serverUrl, auth.token, code, currentVersion);
+      const verified = await verifyAccount(auth.serverUrl, auth.token, currentVersion).catch(() => ({}));
       const next = { ...auth, ...patch, ...verified, token: auth.token };
       await persistAuth(next);
       showToast("success", "会员已开通");
@@ -485,14 +491,14 @@ export function App() {
     } finally {
       setAuthAction(null);
     }
-  }, [auth, persistAuth]);
+  }, [auth, currentVersion, persistAuth]);
 
   const handleVerify = useCallback(async () => {
     if (!auth.token) { showToast("warning", "请先登录"); return; }
     setAuthError("");
     setAuthAction("verify");
     try {
-      const patch = await verifyAccount(auth.serverUrl, auth.token);
+      const patch = await verifyAccount(auth.serverUrl, auth.token, currentVersion);
       const next = { ...auth, ...patch, token: auth.token };
       await persistAuth(next);
       showToast("success", next.active ? "会员状态有效" : "未开通会员");
@@ -508,7 +514,7 @@ export function App() {
     } finally {
       setAuthAction(null);
     }
-  }, [auth, persistAuth]);
+  }, [auth, currentVersion, persistAuth]);
 
   const handleLogout = useCallback(async () => {
     const previous = auth;
@@ -654,11 +660,13 @@ export function App() {
     }
   }, [auth.active, dedup, diagnostics, diagnosticsReady, performance, queueSubmitting]);
 
+  const forceUpdate = Boolean(updateInfo?.required);
+
   return (
-    <div className={compact ? "app-shell compact" : "app-shell"}>
-      <TitleBar />
-      <Sidebar page={page} onChange={setPage} auth={auth} pendingTasks={taskStatus.pendingCount + (taskStatus.running ? 1 : 0)} />
-      <main className="content-viewport">
+    <div className={`${compact ? "app-shell compact" : "app-shell"}${forceUpdate ? " force-update" : ""}`}>
+      <TitleBar blocked={forceUpdate} />
+      <Sidebar page={page} onChange={setPage} auth={auth} pendingTasks={taskStatus.pendingCount + (taskStatus.running ? 1 : 0)} updateInfo={updateInfo} blocked={forceUpdate} />
+      <main className="content-viewport" inert={forceUpdate ? true : undefined} aria-hidden={forceUpdate || undefined}>
         <div className="content-inner">
           {page === "mix" && (
             <MixWorkflowPage
@@ -691,6 +699,15 @@ export function App() {
           )}
         </div>
       </main>
+      {updateInfo?.required && (
+        <ForcedUpdateDialog
+          currentVersion={currentVersion}
+          updateInfo={updateInfo}
+          checking={updateChecking}
+          error={updateError}
+          onRetry={() => void checkUpdates(true)}
+        />
+      )}
       <ToastContainer />
     </div>
   );

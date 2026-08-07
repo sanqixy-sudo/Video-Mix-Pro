@@ -209,6 +209,70 @@ class SecurityFlowTests(unittest.TestCase):
         finally:
             admin.close()
 
+    def test_client_minimum_version_enforced_on_auth(self) -> None:
+        username = self.unique_user("minimum-version")
+        registered = self.client.post(
+            "/api/auth/register",
+            json={"username": username, "password": "UserPass123!", "app_version": "0.2.1"},
+        )
+        self.assertEqual(registered.status_code, 200, registered.text)
+
+        with self.server.db() as conn:
+            previous = dict(conn.execute("SELECT * FROM app_releases WHERE channel='stable'").fetchone())
+            conn.execute(
+                "UPDATE app_releases SET latest_version='0.3.0',minimum_version='0.2.1',is_mandatory=1 WHERE channel='stable'"
+            )
+        try:
+            legacy = self.client.post(
+                "/api/auth/login",
+                json={"username": username, "password": "UserPass123!", "device_id": "legacy-device"},
+            )
+            self.assertEqual(legacy.status_code, 426, legacy.text)
+            self.assertEqual(legacy.json()["detail"]["code"], "CLIENT_UPDATE_REQUIRED")
+
+            outdated = self.client.post(
+                "/api/auth/login",
+                json={
+                    "username": username,
+                    "password": "UserPass123!",
+                    "device_id": "old-device",
+                    "app_version": "0.2.0",
+                },
+            )
+            self.assertEqual(outdated.status_code, 426, outdated.text)
+
+            supported = self.client.post(
+                "/api/auth/login",
+                json={
+                    "username": username,
+                    "password": "UserPass123!",
+                    "device_id": "supported-device",
+                    "app_version": "0.2.1",
+                },
+            )
+            self.assertEqual(supported.status_code, 200, supported.text)
+
+            blocked_verify = self.client.post(
+                "/api/auth/verify",
+                json={"token": supported.json()["token"], "device_id": "supported-device", "app_version": "0.2.0"},
+            )
+            self.assertEqual(blocked_verify.status_code, 426, blocked_verify.text)
+
+            latest = self.client.get("/api/update/check", params={"current_version": "0.3.0"})
+            self.assertEqual(latest.status_code, 200, latest.text)
+            self.assertFalse(latest.json()["update_available"])
+            self.assertFalse(latest.json()["required"])
+        finally:
+            with self.server.db() as conn:
+                conn.execute(
+                    """UPDATE app_releases SET latest_version=?,minimum_version=?,title=?,notes=?,download_url=?,sha256=?,
+                       is_mandatory=?,updated_at=? WHERE channel='stable'""",
+                    (
+                        previous["latest_version"], previous["minimum_version"], previous["title"], previous["notes"],
+                        previous["download_url"], previous["sha256"], previous["is_mandatory"], previous["updated_at"],
+                    ),
+                )
+
     def test_update_version_comparison_and_admin_validation(self) -> None:
         current = self.client.get("/api/update/check", params={"current_version": "0.1.0"})
         self.assertEqual(current.status_code, 200, current.text)

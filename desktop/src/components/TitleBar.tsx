@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Minus, Maximize2, Minimize2, X } from "lucide-react";
 import brandHorizontal from "../assets/brand-horizontal-dark.png";
 
-export function TitleBar() {
+export function TitleBar({ blocked = false }: { blocked?: boolean }) {
   const [isMaximized, setIsMaximized] = useState(false);
   const [windowApi, setWindowApi] = useState<any>(null);
 
@@ -64,7 +64,7 @@ export function TitleBar() {
   };
 
   return (
-    <header className="title-bar" data-tauri-drag-region>
+    <header className="title-bar" data-tauri-drag-region inert={blocked ? true : undefined} aria-hidden={blocked || undefined}>
       <div className="title-bar-brand">
         <img src={brandHorizontal} alt="Video Mix Pro" />
       </div>

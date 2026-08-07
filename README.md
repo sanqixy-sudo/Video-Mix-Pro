@@ -6,7 +6,7 @@
 
   <p>
     <img src="https://img.shields.io/badge/客户端-0.2.1-5E6AD2?style=flat-square" alt="Client 0.2.1">
-    <img src="https://img.shields.io/badge/运营后台-0.2.2-1EA672?style=flat-square" alt="Web 0.2.2">
+    <img src="https://img.shields.io/badge/运营后台-0.2.3-1EA672?style=flat-square" alt="Web 0.2.3">
     <img src="https://img.shields.io/badge/平台-Windows_x64-1473E6?style=flat-square" alt="Windows x64">
     <img src="https://img.shields.io/badge/Tauri-2.x-24C8DB?style=flat-square" alt="Tauri 2">
     <img src="https://img.shields.io/badge/FFmpeg-内置-5CB85C?style=flat-square" alt="FFmpeg">
@@ -97,7 +97,11 @@ docker compose up -d --build
 3. 在本仓库创建 GitHub Release 并上传安装包。
 4. 复制 Release 的直接下载链接。
 5. 登录运营后台，在“版本发布”填写版本号、GitHub 直链、更新说明与 SHA-256。
-6. 客户端启动时会比较本地版本与最新版本，并向用户展示更新入口。
+6. 客户端启动时及每 30 分钟比较一次本地版本、最新版本和最低支持版本。
+7. 有普通更新时，左下角会员状态旁显示红点和“新版本”，点击后进入设置更新页。
+8. 本地版本低于“最低支持版本”时，客户端显示不可关闭的强制更新弹窗；服务端登录、会话验证与兑换接口也会返回 `426 CLIENT_UPDATE_REQUIRED`，防止旧客户端绕过限制。
+
+首次上线强制更新能力时，建议保持 `LEGACY_CLIENT_VERSION=0.2.0`，并让后台“最低支持版本”继续为 `0.2.0`。确认新版覆盖率后，再由管理员手动提高最低支持版本；提高后，低于该版本及未上报版本的老客户端会被要求更新。
 
 只更新 Docker 官网时，仅递增 `SERVER_VERSION`，不要修改客户端 `APP_VERSION`，用户也不需要重新安装客户端。
 
@@ -149,7 +153,7 @@ Video-Mix-Pro/
 ## 当前版本
 
 - Windows 客户端：`0.2.1`
-- Docker 官网与运营后台：`0.2.2`
+- Docker 官网与运营后台：`0.2.3`
 - 设备换绑冷却：默认 `6` 小时
 
 ---
