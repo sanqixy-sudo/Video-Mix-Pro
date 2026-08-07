@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getDiagnostics, getRenderStatus, loadAuthState, scanMaterials, saveAuthState, startOverlayTask, startRenderTask, startWatermarkTask } from "./lib/tauri";
+import { getDiagnostics, getRenderStatus, loadAuthState, scanMaterials, saveAuthState, startDedupTask, startOverlayTask, startRenderTask, startWatermarkTask } from "./lib/tauri";
 import { checkForUpdates, loginAccount, logoutAccount, redeemCode, registerAccount, verifyAccount } from "./lib/authApi";
 import { recordPostSubmitEditSession, recordQueueOutcomes, recordStartAttempt, recordStartFailure, recordTaskSubmitted } from "./lib/analytics";
 import { ToastContainer, showToast } from "./components/Toast";
@@ -8,14 +8,16 @@ import { Sidebar } from "./components/Sidebar";
 import { MixWorkflowPage, type ScanViewState } from "./pages/MixWorkflowPage";
 import { OverlayPage } from "./pages/OverlayPage";
 import { WatermarkPage } from "./pages/WatermarkPage";
+import { DedupPage } from "./pages/DedupPage";
 import { TasksPage } from "./pages/TasksPage";
 import { AuthPage } from "./pages/AuthPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import type { AuthState, Diagnostics, MaterialConfig, OverlayConfig, PageKey, RenderTaskStatus, ScanSummary, UpdateInfo, WatermarkConfig } from "./types";
+import type { AuthState, DedupConfig, Diagnostics, MaterialConfig, OverlayConfig, PageKey, RenderTaskStatus, ScanSummary, UpdateInfo, WatermarkConfig } from "./types";
 
 const LAST_MATERIALS_KEY = "video_mix_last_materials_v2";
 const LAST_OVERLAY_KEY = "video_mix_last_overlay_v2";
 const LAST_WATERMARK_KEY = "video_mix_last_watermark_v1";
+const LAST_DEDUP_KEY = "video_mix_last_dedup_v1";
 const MEMBERSHIP_VERIFY_INTERVAL_MS = 30 * 60 * 1000;
 
 export const defaultAuth: AuthState = {
@@ -107,6 +109,20 @@ export const defaultWatermark: WatermarkConfig = {
   conflictStrategy: "skip",
 };
 
+export const defaultDedup: DedupConfig = {
+  sourceFolder: "",
+  outputFolder: "",
+  randomBitrate: true,
+  dropFrames: true,
+  microSpeed: true,
+  subtleFilter: true,
+  keepAudio: true,
+  encoder: "cpu_libx264",
+  workers: 2,
+  concurrencyMode: "manual",
+  conflictStrategy: "skip",
+};
+
 const fallbackScan: ScanSummary = {
   mainCount: 0,
   firstCount: 0,
@@ -151,6 +167,7 @@ export function App() {
   const [materials, setMaterials] = useState<MaterialConfig>(() => loadStoredConfig(LAST_MATERIALS_KEY, defaultMaterials));
   const [overlay, setOverlay] = useState<OverlayConfig>(() => loadStoredConfig(LAST_OVERLAY_KEY, defaultOverlay));
   const [watermark, setWatermark] = useState<WatermarkConfig>(() => loadStoredConfig(LAST_WATERMARK_KEY, defaultWatermark));
+  const [dedup, setDedup] = useState<DedupConfig>(() => loadStoredConfig(LAST_DEDUP_KEY, defaultDedup));
   const [scan, setScan] = useState<ScanSummary>(fallbackScan);
   const [scanState, setScanState] = useState<ScanViewState>({ status: "idle", message: "" });
   const [diagnostics, setDiagnostics] = useState<Diagnostics>(fallbackDiagnostics);
@@ -161,7 +178,7 @@ export function App() {
   const [submitError, setSubmitError] = useState("");
   const [authAction, setAuthAction] = useState<"login" | "register" | "verify" | "redeem" | null>(null);
   const [authError, setAuthError] = useState("");
-  const [currentVersion, setCurrentVersion] = useState("0.2.0");
+  const [currentVersion, setCurrentVersion] = useState("0.2.1");
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateError, setUpdateError] = useState("");
@@ -225,7 +242,7 @@ export function App() {
     setUpdateChecking(true);
     setUpdateError("");
     try {
-      let version = "0.2.0";
+      let version = "0.2.1";
       if ("__TAURI_INTERNALS__" in window) {
         const { getVersion } = await import("@tauri-apps/api/app");
         version = await getVersion();
@@ -335,6 +352,11 @@ export function App() {
   }, [watermark]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => localStorage.setItem(LAST_DEDUP_KEY, JSON.stringify(dedup)), 250);
+    return () => window.clearTimeout(timer);
+  }, [dedup]);
+
+  useEffect(() => {
     recordQueueOutcomes(taskStatus.queue);
   }, [taskStatus.queue]);
 
@@ -371,6 +393,11 @@ export function App() {
   const updateWatermark = useCallback((patch: Partial<WatermarkConfig>) => {
     setSubmitError("");
     setWatermark((current) => ({ ...current, ...patch }));
+  }, []);
+
+  const updateDedup = useCallback((patch: Partial<DedupConfig>) => {
+    setSubmitError("");
+    setDedup((current) => ({ ...current, ...patch }));
   }, []);
 
   const handleLogin = useCallback(async (username: string, password: string) => {
@@ -561,6 +588,35 @@ export function App() {
     }
   }, [auth.active, diagnostics, diagnosticsReady, queueSubmitting, watermark]);
 
+  const startDedup = useCallback(async () => {
+    if (queueSubmitting) return;
+    recordStartAttempt();
+    const validationError = validateDedupStart(auth.active, dedup, diagnosticsReady, diagnostics);
+    if (validationError) {
+      recordStartFailure();
+      setSubmitError(validationError);
+      if (!auth.active) setPage("auth");
+      showToast("warning", validationError);
+      return;
+    }
+    setSubmitError("");
+    setQueueSubmitting(true);
+    try {
+      const status = await startDedupTask(dedup);
+      setTaskStatus(status);
+      recordTaskSubmitted();
+      const unfinished = status.queue.filter((item) => item.status === "waiting" || item.status === "running" || item.status === "cancelling").length;
+      showToast("success", `视频去重任务已加入队列，当前共有 ${unfinished} 个未完成任务`);
+    } catch (error) {
+      const message = readableError(error);
+      recordStartFailure();
+      setSubmitError(message);
+      showToast("danger", message);
+    } finally {
+      setQueueSubmitting(false);
+    }
+  }, [auth.active, dedup, diagnostics, diagnosticsReady, queueSubmitting]);
+
   return (
     <div className={compact ? "app-shell compact" : "app-shell"}>
       <TitleBar />
@@ -586,6 +642,7 @@ export function App() {
           )}
           {page === "overlay" && <OverlayPage config={overlay} diagnostics={diagnostics} diagnosticsReady={diagnosticsReady} submitting={queueSubmitting} submitError={submitError} onUpdate={updateOverlay} onStart={startOverlay} />}
           {page === "watermark" && <WatermarkPage config={watermark} diagnostics={diagnostics} diagnosticsReady={diagnosticsReady} submitting={queueSubmitting} submitError={submitError} taskStatus={taskStatus} onUpdate={updateWatermark} onStart={startWatermark} onOpenTasks={() => setPage("tasks")} />}
+          {page === "dedup" && <DedupPage config={dedup} diagnostics={diagnostics} diagnosticsReady={diagnosticsReady} submitting={queueSubmitting} submitError={submitError} taskStatus={taskStatus} onUpdate={updateDedup} onStart={startDedup} onOpenTasks={() => setPage("tasks")} />}
           {page === "tasks" && <TasksPage status={taskStatus} onStatusChange={setTaskStatus} />}
           {page === "auth" && (
             <AuthPage auth={auth} action={authAction} error={authError} onAuthChange={(next) => { setAuthError(""); setAuth(next); }} onLogin={handleLogin} onRegister={handleRegister} onRedeem={handleRedeem} onVerify={handleVerify} onLogout={handleLogout} />
@@ -654,6 +711,15 @@ function validateWatermarkStart(active: boolean, watermark: WatermarkConfig, dia
   if (watermark.widthPercent < 5 || watermark.widthPercent > 35) return "Logo 宽度占比需要在 5% - 35% 之间";
   if (watermark.speed < 40 || watermark.speed > 600) return "飘动速度需要在 40 - 600 px/秒之间";
   if (watermark.opacity < 0.1 || watermark.opacity > 1) return "透明度需要在 0.1 - 1.0 之间";
+  if (diagnosticsReady && !diagnostics.hasFfmpeg) return "找不到 FFmpeg，请先在设置页确认组件状态";
+  return "";
+}
+
+function validateDedupStart(active: boolean, dedup: DedupConfig, diagnosticsReady: boolean, diagnostics: Diagnostics): string {
+  if (!active) return "请先登录会员账号";
+  if (!dedup.sourceFolder.trim()) return "请先选择视频文件夹";
+  if (!dedup.randomBitrate && !dedup.dropFrames && !dedup.microSpeed && !dedup.subtleFilter) return "请至少开启一种去重处理方式";
+  if (dedup.workers < 1 || dedup.workers > 4) return "并发处理需要在 1 - 4 路之间";
   if (diagnosticsReady && !diagnostics.hasFfmpeg) return "找不到 FFmpeg，请先在设置页确认组件状态";
   return "";
 }

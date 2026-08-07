@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AuthState, Diagnostics, MaterialConfig, OverlayConfig, RenderTaskStatus, ScanSummary, WatermarkConfig } from "../types";
+import type { AuthState, DedupConfig, Diagnostics, MaterialConfig, OverlayConfig, RenderTaskStatus, ScanSummary, WatermarkConfig } from "../types";
 
 const fallbackDiagnostics: Diagnostics = {
   ffmpegPath: "",
@@ -96,6 +96,11 @@ export async function startOverlayTask(config: OverlayConfig): Promise<RenderTas
 export async function startWatermarkTask(config: WatermarkConfig): Promise<RenderTaskStatus> {
   if (!isTauriRuntime()) return fallbackRenderStatus;
   return invoke<RenderTaskStatus>("start_watermark_task", { config });
+}
+
+export async function startDedupTask(config: DedupConfig): Promise<RenderTaskStatus> {
+  if (!isTauriRuntime()) return fallbackRenderStatus;
+  return invoke<RenderTaskStatus>("start_dedup_task", { config });
 }
 
 export async function getRenderStatus(): Promise<RenderTaskStatus> {

@@ -11,6 +11,7 @@ const navItems: Array<{ key: PageKey; label: string; icon: typeof LayoutDashboar
   { key: "mix", label: "批量混剪", icon: LayoutDashboard },
   { key: "overlay", label: "套外框", icon: Activity },
   { key: "watermark", label: "飘动水印", icon: Stamp },
+  { key: "dedup", label: "视频去重", icon: Activity },
   { key: "tasks", label: "任务中心", icon: Activity },
   { key: "auth", label: "授权中心", icon: ShieldCheck },
   { key: "settings", label: "设置", icon: Settings },

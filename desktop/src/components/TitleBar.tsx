@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Minus, Maximize2, Minimize2, X } from "lucide-react";
-import brandHorizontal from "../assets/brand-horizontal.png";
+import brandHorizontal from "../assets/brand-horizontal-dark.png";
 
 export function TitleBar() {
   const [isMaximized, setIsMaximized] = useState(false);

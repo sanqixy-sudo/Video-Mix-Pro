@@ -5,7 +5,7 @@
   <p>批量混剪 · 画面叠加 · 动态水印 · 渲染队列 · 设备绑定 · 在线更新</p>
 
   <p>
-    <img src="https://img.shields.io/badge/客户端-0.2.0-5E6AD2?style=flat-square" alt="Client 0.2.0">
+    <img src="https://img.shields.io/badge/客户端-0.2.1-5E6AD2?style=flat-square" alt="Client 0.2.1">
     <img src="https://img.shields.io/badge/运营后台-0.2.1-1EA672?style=flat-square" alt="Web 0.2.1">
     <img src="https://img.shields.io/badge/平台-Windows_x64-1473E6?style=flat-square" alt="Windows x64">
     <img src="https://img.shields.io/badge/Tauri-2.x-24C8DB?style=flat-square" alt="Tauri 2">
@@ -26,7 +26,7 @@ Video Mix Pro 将本地高性能视频处理客户端与可独立部署的会员
 | Windows 客户端 | Docker 运营后台 |
 | --- | --- |
 | 按文件夹选择整批素材 | 用户分页、搜索与状态筛选 |
-| 视频混剪与多任务渲染队列 | 会员开通、撤销、封禁与批量操作 |
+| 视频混剪、批量去重与多任务渲染队列 | 会员开通、撤销、封禁与批量操作 |
 | 画面叠加、透明度和位置控制 | 单设备绑定与六小时换绑冷却 |
 | Logo 动态飘动水印 | Key 批次、过期、停用、恢复与导出 |
 | 自动检测 NVIDIA / AMD / Intel / CPU 编码能力 | 发布版本、GitHub 直链与更新说明管理 |
@@ -148,7 +148,7 @@ Video-Mix-Pro/
 
 ## 当前版本
 
-- Windows 客户端：`0.2.0`
+- Windows 客户端：`0.2.1`
 - Docker 官网与运营后台：`0.2.1`
 - 设备换绑冷却：默认 `6` 小时
 

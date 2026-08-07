@@ -19,6 +19,7 @@ pub fn run() {
             commands::render::start_render_task,
             commands::render::start_overlay_task,
             commands::render::start_watermark_task,
+            commands::render::start_dedup_task,
             commands::render::get_render_status,
             commands::render::cancel_render_task,
             commands::render::remove_queued_task,

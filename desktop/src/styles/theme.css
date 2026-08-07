@@ -104,10 +104,11 @@ textarea:focus-visible {
 
 .title-bar-brand img {
   display: block;
-  width: 132px;
-  height: 26px;
+  width: 142px;
+  height: 28px;
   object-fit: contain;
   object-position: left center;
+  filter: saturate(1.08) contrast(1.04);
   pointer-events: none;
 }
 
@@ -1901,6 +1902,83 @@ input[type="radio"] {
 .watermark-submit-bar span { color: var(--text-muted); font-size: 12px; }
 .watermark-submit-actions { gap: 8px; }
 
+.dedup-file-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dedup-settings-panel {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.dedup-option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dedup-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 86px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  color: var(--text-primary);
+  text-align: left;
+  transition: background 120ms, border-color 120ms, box-shadow 120ms;
+}
+
+.dedup-option:hover {
+  border-color: var(--text-weak);
+  background: var(--hover);
+}
+
+.dedup-option.active {
+  border-color: rgba(91, 107, 124, 0.42);
+  background: var(--primary-light);
+}
+
+.dedup-option-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: var(--primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+}
+
+.dedup-option-copy {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.dedup-option-copy strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.dedup-option-copy small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dedup-options-row {
+  padding-top: 16px;
+}
+
+.dedup-options-row .checkbox-row svg {
+  color: var(--primary);
+}
+
 @media (max-width: 1100px) {
   .watermark-file-grid { grid-template-columns: 1fr; }
   .watermark-file-card p { min-height: 0; }
@@ -1913,6 +1991,7 @@ input[type="radio"] {
   .watermark-submit-bar,
   .watermark-options-row { align-items: stretch; flex-direction: column; }
   .watermark-parameter-grid { grid-template-columns: 1fr; }
+  .dedup-option-grid { grid-template-columns: 1fr; }
   .watermark-workers { width: 100%; }
   .watermark-submit-actions { justify-content: flex-end; }
 }

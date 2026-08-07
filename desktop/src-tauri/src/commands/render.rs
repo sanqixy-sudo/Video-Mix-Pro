@@ -46,6 +46,7 @@ enum QueuedTaskPlan {
     Render(RenderPlan),
     Overlay(OverlayPlan),
     Watermark(WatermarkPlan),
+    Dedup(DedupPlan),
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -183,6 +184,23 @@ pub struct WatermarkConfig {
     pub conflict_strategy: String,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DedupConfig {
+    pub source_folder: String,
+    pub output_folder: String,
+    pub random_bitrate: bool,
+    pub drop_frames: bool,
+    pub micro_speed: bool,
+    pub subtle_filter: bool,
+    pub keep_audio: bool,
+    pub encoder: String,
+    pub workers: u32,
+    pub concurrency_mode: String,
+    #[serde(rename = "conflictStrategy")]
+    pub conflict_strategy: String,
+}
+
 #[derive(Clone)]
 struct RenderJob {
     index: u32,
@@ -250,6 +268,16 @@ struct WatermarkPlan {
 }
 
 #[derive(Clone)]
+struct DedupPlan {
+    config: DedupConfig,
+    source: PathBuf,
+    videos: Vec<PathBuf>,
+    output: PathBuf,
+    ffmpeg: PathBuf,
+    ffprobe: Option<PathBuf>,
+}
+
+#[derive(Clone)]
 struct Variant {
     is_dedup: bool,
     speed: f64,
@@ -290,6 +318,39 @@ impl Variant {
             crf: None,
             audio_rate,
             note: format!("去重：速度 {speed:.3}x / fps {fps} / 码率 {bitrate}"),
+        }
+    }
+}
+
+struct DedupVariant {
+    speed: f64,
+    fps: &'static str,
+    bitrate: String,
+    crf: u8,
+    brightness: f64,
+    contrast: f64,
+    saturation: f64,
+    hue: f64,
+}
+
+impl DedupVariant {
+    fn from_seed(seed: u32) -> Self {
+        let speed_values = [0.985, 0.990, 0.995, 1.005, 1.010, 1.015];
+        let fps_values = ["23.976", "24", "25", "29.97", "30"];
+        let speed = speed_values[(seed as usize * 7 + 2) % speed_values.len()];
+        let fps = fps_values[(seed as usize * 5 + 1) % fps_values.len()];
+        let bitrate_num = 2200 + ((seed as usize * 379) % 2600);
+        let crf = 20 + ((seed as u8).wrapping_mul(3) % 5);
+        let signed = |value: i32, scale: f64| -> f64 { value as f64 / scale };
+        Self {
+            speed,
+            fps,
+            bitrate: format!("{bitrate_num}k"),
+            crf,
+            brightness: signed((seed.wrapping_mul(11) % 7) as i32 - 3, 1000.0),
+            contrast: 1.0 + signed((seed.wrapping_mul(13) % 9) as i32 - 4, 1000.0),
+            saturation: 1.0 + signed((seed.wrapping_mul(17) % 11) as i32 - 5, 1000.0),
+            hue: signed((seed.wrapping_mul(19) % 9) as i32 - 4, 100.0),
         }
     }
 }
@@ -342,6 +403,17 @@ pub fn start_watermark_task(
 ) -> Result<RenderTaskStatus, String> {
     let plan = validate_watermark_plan(&app, config)?;
     let task = queued_watermark_task(plan);
+    enqueue_task(&state, task)
+}
+
+#[tauri::command]
+pub fn start_dedup_task(
+    app: tauri::AppHandle,
+    state: tauri::State<RenderState>,
+    config: DedupConfig,
+) -> Result<RenderTaskStatus, String> {
+    let plan = validate_dedup_plan(&app, config)?;
+    let task = queued_dedup_task(plan);
     enqueue_task(&state, task)
 }
 
@@ -421,6 +493,7 @@ pub fn retry_queue_task(
         QueuedTaskPlan::Render(plan) => queued_render_task_with_retry(plan, true),
         QueuedTaskPlan::Overlay(plan) => queued_overlay_task_with_retry(plan, true),
         QueuedTaskPlan::Watermark(plan) => queued_watermark_task_with_retry(plan, true),
+        QueuedTaskPlan::Dedup(plan) => queued_dedup_task_with_retry(plan, true),
     };
     enqueue_task(&state, task)
 }
@@ -510,6 +583,36 @@ fn queued_watermark_task_with_retry(mut plan: WatermarkPlan, is_retry: bool) -> 
     QueuedTask { id, plan: QueuedTaskPlan::Watermark(plan), item }
 }
 
+fn queued_dedup_task(plan: DedupPlan) -> QueuedTask {
+    queued_dedup_task_with_retry(plan, false)
+}
+
+fn queued_dedup_task_with_retry(mut plan: DedupPlan, is_retry: bool) -> QueuedTask {
+    if is_retry {
+        plan.config.conflict_strategy = "skip".to_string();
+    }
+    let id = next_task_id();
+    let source_name = plan
+        .source
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("视频文件夹");
+    let item = QueueTaskStatus {
+        id: id.clone(),
+        name: format!("{}{source_name} · {} 个视频", if is_retry { "重试 · " } else { "" }, plan.videos.len()),
+        task_kind: "视频去重".to_string(),
+        status: "waiting".to_string(),
+        progress: 0,
+        completed: 0,
+        failed: 0,
+        total: plan.videos.len() as u32,
+        output_folder: plan.output.to_string_lossy().to_string(),
+        created_at: unix_millis() as u64,
+        is_retry,
+    };
+    QueuedTask { id, plan: QueuedTaskPlan::Dedup(plan), item }
+}
+
 fn enqueue_task(state: &RenderState, task: QueuedTask) -> Result<RenderTaskStatus, String> {
     let item = task.item.clone();
     let archived_plan = task.plan.clone();
@@ -561,6 +664,7 @@ fn run_queue_loop(state: RenderState) {
             QueuedTaskPlan::Render(plan) => initial_render_status(plan, &task.id),
             QueuedTaskPlan::Overlay(plan) => initial_overlay_status(plan, &task.id),
             QueuedTaskPlan::Watermark(plan) => initial_watermark_status(plan, &task.id),
+            QueuedTaskPlan::Dedup(plan) => initial_dedup_status(plan, &task.id),
         };
         if let Ok(mut status) = state.inner.lock() {
             *status = initial;
@@ -571,6 +675,7 @@ fn run_queue_loop(state: RenderState) {
             QueuedTaskPlan::Render(plan) => run_render_task(plan, state.inner.clone(), state.cancel.clone()),
             QueuedTaskPlan::Overlay(plan) => run_overlay_task(plan, state.inner.clone(), state.cancel.clone()),
             QueuedTaskPlan::Watermark(plan) => run_watermark_task(plan, state.inner.clone(), state.cancel.clone()),
+            QueuedTaskPlan::Dedup(plan) => run_dedup_task(plan, state.inner.clone(), state.cancel.clone()),
         }
 
         let final_status = state.inner.lock().ok().map(|status| status.clone());
@@ -667,6 +772,36 @@ fn initial_watermark_status(plan: &WatermarkPlan, task_id: &str) -> RenderTaskSt
     push_log(&mut status, format!("Logo 图片：{}", plan.logo.to_string_lossy()));
     push_log(&mut status, format!("找到视频：{} 个。", plan.videos.len()));
     push_log(&mut status, format!("Logo 宽度：{:.1}%；速度：{:.1} px/秒；透明度：{:.2}。", plan.config.width_percent, plan.config.speed, plan.config.opacity));
+    push_log(&mut status, format!("输出目录：{}", plan.output.to_string_lossy()));
+    status
+}
+
+fn initial_dedup_status(plan: &DedupPlan, task_id: &str) -> RenderTaskStatus {
+    let mut status = RenderTaskStatus {
+        running: true,
+        cancelled: false,
+        status: "运行中".to_string(),
+        progress: 0,
+        completed: 0,
+        failed: 0,
+        total: plan.videos.len() as u32,
+        output_folder: plan.output.to_string_lossy().to_string(),
+        task_kind: "视频去重".to_string(),
+        logs: vec!["队列任务已开始。".to_string()],
+        current_task_id: task_id.to_string(),
+        pending_count: 0,
+        queue: Vec::new(),
+    };
+    push_log(&mut status, format!("视频文件夹：{}", plan.source.to_string_lossy()));
+    push_log(&mut status, format!("找到视频：{} 个。", plan.videos.len()));
+    push_log(&mut status, format!(
+        "处理项：随机码率={}，抽帧={}，微变速={}，极淡滤镜={}，音频={}。",
+        if plan.config.random_bitrate { "开启" } else { "关闭" },
+        if plan.config.drop_frames { "开启" } else { "关闭" },
+        if plan.config.micro_speed { "开启" } else { "关闭" },
+        if plan.config.subtle_filter { "开启" } else { "关闭" },
+        if plan.config.keep_audio { "保留" } else { "不保留" },
+    ));
     push_log(&mut status, format!("输出目录：{}", plan.output.to_string_lossy()));
     status
 }
@@ -921,6 +1056,35 @@ fn validate_watermark_plan(app: &tauri::AppHandle, config: WatermarkConfig) -> R
     Ok(WatermarkPlan { config, source, logo, videos, output, ffmpeg, ffprobe })
 }
 
+fn validate_dedup_plan(app: &tauri::AppHandle, config: DedupConfig) -> Result<DedupPlan, String> {
+    let source = PathBuf::from(config.source_folder.trim());
+    if !source.exists() || !source.is_dir() {
+        return Err("视频文件夹不存在或不可访问。".to_string());
+    }
+    let videos = scan_videos(&source);
+    if videos.is_empty() {
+        return Err("当前文件夹没有找到支持的视频。".to_string());
+    }
+
+    let configured = config.output_folder.trim();
+    let selected_output = if configured.is_empty() { source.join("去重") } else { PathBuf::from(configured) };
+    let output = if same_path(&selected_output, &source) { source.join("去重") } else { selected_output };
+    fs::create_dir_all(&output).map_err(|err| format!("输出目录无法创建：{err}"))?;
+    ensure_output_writable(&output)?;
+
+    let ffmpeg = find_binary(app, "ffmpeg.exe", &source).or_else(|| find_binary(app, "ffmpeg", &source));
+    let Some(ffmpeg) = ffmpeg else {
+        return Err("找不到 ffmpeg，请放入程序 bin 目录、素材目录或加入系统 PATH。".to_string());
+    };
+    match config.encoder.as_str() {
+        "auto" | "nvenc_h264" | "qsv_h264" | "amf_h264" | "nvidia_nvenc" | "intel_qsv" | "amd_amf" => validate_encoder(&ffmpeg, &config.encoder)?,
+        _ => validate_encoder(&ffmpeg, "cpu_libx264")?,
+    }
+    let ffprobe = find_binary(app, "ffprobe.exe", &source).or_else(|| find_binary(app, "ffprobe", &source));
+
+    Ok(DedupPlan { config, source, videos, output, ffmpeg, ffprobe })
+}
+
 fn run_watermark_task(plan: WatermarkPlan, state: Arc<Mutex<RenderTaskStatus>>, cancel: Arc<AtomicBool>) {
     let total = plan.videos.len() as u32;
     let workers = watermark_worker_count(&plan);
@@ -1026,6 +1190,159 @@ fn run_watermark_ffmpeg(
     }
     append_watermark_encoder_args(&mut cmd, out_file, encoder_for_job(&plan.config.encoder, index));
     cmd.args(["-map_metadata", "0", "-shortest", "-progress", "pipe:1", "-nostats"]);
+    cmd.arg(out_file);
+
+    run_progress_cmd(cmd, plan.ffprobe.as_deref(), video, index, total, state, cancel)
+}
+
+fn run_dedup_task(plan: DedupPlan, state: Arc<Mutex<RenderTaskStatus>>, cancel: Arc<AtomicBool>) {
+    let total = plan.videos.len() as u32;
+    let workers = dedup_worker_count(&plan);
+    let next_index = Arc::new(AtomicU32::new(0));
+    let task_seed = unix_millis() as u32;
+    log_state(&state, format!(
+        "视频去重参数：随机码率={}，抽帧={}，微变速={}，极淡滤镜={}，音频={}，编码={}，并发={}，冲突={}。",
+        if plan.config.random_bitrate { "开启" } else { "关闭" },
+        if plan.config.drop_frames { "开启" } else { "关闭" },
+        if plan.config.micro_speed { "开启" } else { "关闭" },
+        if plan.config.subtle_filter { "开启" } else { "关闭" },
+        if plan.config.keep_audio { "保留" } else { "不保留" },
+        encoder_mode_label(&plan.config.encoder),
+        workers,
+        conflict_label(&plan.config.conflict_strategy),
+    ));
+    if plan.ffprobe.is_none() && plan.config.keep_audio {
+        log_state(&state, "未找到 ffprobe：无法可靠检测音频，本次会自动输出无音频，避免无音轨视频失败。".to_string());
+    }
+
+    thread::scope(|scope| {
+        for _ in 0..workers {
+            let plan_ref = &plan;
+            let state_ref = state.clone();
+            let cancel_ref = cancel.clone();
+            let next_ref = next_index.clone();
+            let task_seed_ref = task_seed;
+            scope.spawn(move || loop {
+                if cancel_ref.load(Ordering::SeqCst) {
+                    break;
+                }
+                let offset = next_ref.fetch_add(1, Ordering::SeqCst) as usize;
+                if offset >= plan_ref.videos.len() {
+                    break;
+                }
+                let video = &plan_ref.videos[offset];
+                let index = offset as u32 + 1;
+                let output_name = video.file_name().map(|name| name.to_os_string()).unwrap_or_else(|| format!("video_{index:04}.mp4").into());
+                let requested = plan_ref.output.join(output_name);
+                let Some(out_file) = resolve_output_path_with_strategy(&requested, &plan_ref.config.conflict_strategy) else {
+                    log_state(&state_ref, format!("[{index}] 输出已存在，按 skip 策略跳过：{}", file_name(&requested)));
+                    mark_completed(&state_ref, format!("跳过：{}", file_name(&requested)));
+                    continue;
+                };
+                let output_existed_before = out_file.exists();
+                let has_audio = plan_ref.config.keep_audio
+                    && plan_ref
+                        .ffprobe
+                        .as_deref()
+                        .map(|ffprobe| has_audio_stream(ffprobe, video))
+                        .unwrap_or(false);
+                log_state(&state_ref, format!("[{index}] 开始视频去重：{} -> {}", file_name(video), file_name(&out_file)));
+                let variant_seed = task_seed_ref ^ index.wrapping_mul(0x9E37_79B9);
+                match run_dedup_ffmpeg(plan_ref, video, &out_file, index, total, variant_seed, has_audio, &state_ref, &cancel_ref) {
+                    Ok(()) => mark_completed(&state_ref, file_name(&out_file)),
+                    Err(err) => {
+                        if !output_existed_before {
+                            let _ = fs::remove_file(&out_file);
+                        }
+                        if cancel_ref.load(Ordering::SeqCst) {
+                            log_state(&state_ref, format!("[{index}] 已取消当前 FFmpeg：{}", file_name(video)));
+                            break;
+                        }
+                        log_state(&state_ref, err.chars().take(3000).collect::<String>());
+                        mark_failed(&state_ref, format!("[{index}] 视频去重失败：{}", file_name(video)));
+                    }
+                }
+            });
+        }
+    });
+
+    if let Ok(mut status) = state.lock() {
+        status.running = false;
+        if cancel.load(Ordering::SeqCst) {
+            status.cancelled = true;
+            status.status = "已取消".to_string();
+        } else if status.failed > 0 {
+            status.status = "已完成，有失败".to_string();
+        } else {
+            status.status = "已完成".to_string();
+        }
+        update_progress(&mut status);
+        let completed = status.completed;
+        let failed = status.failed;
+        let total = status.total;
+        push_log(&mut status, format!("任务结束：完成 {completed}，失败 {failed}，总计 {total}。"));
+    }
+}
+
+fn run_dedup_ffmpeg(
+    plan: &DedupPlan,
+    video: &Path,
+    out_file: &Path,
+    index: u32,
+    total: u32,
+    variant_seed: u32,
+    has_audio: bool,
+    state: &Arc<Mutex<RenderTaskStatus>>,
+    cancel: &Arc<AtomicBool>,
+) -> Result<(), String> {
+    let variant = DedupVariant::from_seed(variant_seed);
+    let speed = if plan.config.micro_speed { variant.speed } else { 1.0 };
+    let mut video_filters = vec![format!("setpts={:.6}*PTS", 1.0 / speed)];
+    if plan.config.drop_frames {
+        video_filters.push(format!("fps={}", variant.fps));
+    }
+    if plan.config.subtle_filter {
+        video_filters.push(format!(
+            "eq=brightness={:.5}:contrast={:.5}:saturation={:.5},hue=h={:.5}",
+            variant.brightness,
+            variant.contrast,
+            variant.saturation,
+            variant.hue,
+        ));
+    }
+    video_filters.push("format=yuv420p".to_string());
+
+    let mut filter_complex = format!("[0:v]{}[v]", video_filters.join(","));
+    if has_audio && plan.config.micro_speed {
+        filter_complex.push_str(&format!(";[0:a]atempo={speed:.6}[a]"));
+    }
+
+    let mut cmd = Command::new(&plan.ffmpeg);
+    cmd.args(["-hide_banner", "-loglevel", "error", "-y"]);
+    cmd.arg("-i").arg(video);
+    cmd.args(["-filter_complex", &filter_complex, "-map", "[v]"]);
+    if has_audio {
+        if plan.config.micro_speed {
+            cmd.args(["-map", "[a]"]);
+            append_dedup_audio_args(&mut cmd, out_file);
+        } else {
+            cmd.args(["-map", "0:a?", "-c:a", "copy"]);
+        }
+    } else {
+        cmd.arg("-an");
+    }
+    append_dedup_encoder_args(
+        &mut cmd,
+        out_file,
+        encoder_for_job(&plan.config.encoder, index),
+        plan.config.random_bitrate.then_some(variant.bitrate.as_str()),
+        if plan.config.random_bitrate { variant.crf } else { 23 },
+    );
+    cmd.args(["-map_metadata", "-1"]);
+    if supports_faststart(out_file) {
+        cmd.args(["-movflags", "+faststart"]);
+    }
+    cmd.args(["-progress", "pipe:1", "-nostats"]);
     cmd.arg(out_file);
 
     run_progress_cmd(cmd, plan.ffprobe.as_deref(), video, index, total, state, cancel)
@@ -1575,6 +1892,79 @@ fn append_watermark_encoder_args(cmd: &mut Command, output: &Path, encoder: Enco
     }
 }
 
+fn append_dedup_encoder_args(cmd: &mut Command, output: &Path, encoder: EncoderKind, bitrate: Option<&str>, crf: u8) {
+    let extension = output.extension().and_then(|ext| ext.to_str()).unwrap_or("").to_ascii_lowercase();
+    match extension.as_str() {
+        "webm" => {
+            cmd.args(["-c:v", "libvpx-vp9", "-deadline", "good", "-cpu-used", "4", "-crf", &crf.to_string(), "-b:v", "0", "-pix_fmt", "yuv420p"]);
+        }
+        "wmv" => {
+            cmd.args(["-c:v", "wmv2", "-q:v", "3", "-pix_fmt", "yuv420p"]);
+        }
+        _ => match encoder {
+            EncoderKind::Cpu => {
+                cmd.args(["-c:v", "libx264", "-preset", "veryfast"]);
+                if let Some(bitrate) = bitrate {
+                    cmd.args(["-b:v", bitrate, "-maxrate", bitrate, "-bufsize", bitrate]);
+                } else {
+                    cmd.args(["-crf", &crf.to_string()]);
+                }
+                cmd.args(["-pix_fmt", "yuv420p"]);
+            }
+            EncoderKind::Nvidia => {
+                cmd.args(["-c:v", "h264_nvenc", "-preset", "fast"]);
+                if let Some(bitrate) = bitrate {
+                    cmd.args(["-b:v", bitrate, "-maxrate", bitrate, "-bufsize", bitrate]);
+                } else {
+                    cmd.args(["-cq", &crf.clamp(1, 51).to_string()]);
+                }
+                cmd.args(["-pix_fmt", "yuv420p"]);
+            }
+            EncoderKind::Intel => {
+                cmd.args(["-c:v", "h264_qsv", "-preset", "veryfast"]);
+                if let Some(bitrate) = bitrate {
+                    cmd.args(["-b:v", bitrate]);
+                } else {
+                    cmd.args(["-global_quality", &crf.clamp(1, 51).to_string()]);
+                }
+                cmd.args(["-pix_fmt", "yuv420p"]);
+            }
+            EncoderKind::Amd => {
+                cmd.args(["-c:v", "h264_amf", "-quality", "speed"]);
+                if let Some(bitrate) = bitrate {
+                    cmd.args(["-b:v", bitrate]);
+                } else {
+                    let qp = crf.clamp(1, 51).to_string();
+                    cmd.args(["-qp_i", &qp, "-qp_p", &qp]);
+                }
+                cmd.args(["-pix_fmt", "yuv420p"]);
+            }
+        },
+    }
+}
+
+fn append_dedup_audio_args(cmd: &mut Command, output: &Path) {
+    let extension = output.extension().and_then(|ext| ext.to_str()).unwrap_or("").to_ascii_lowercase();
+    match extension.as_str() {
+        "webm" => {
+            cmd.args(["-c:a", "libopus", "-b:a", "128k"]);
+        }
+        "wmv" => {
+            cmd.args(["-c:a", "wmav2", "-b:a", "160k"]);
+        }
+        _ => {
+            cmd.args(["-c:a", "aac", "-b:a", "160k"]);
+        }
+    }
+}
+
+fn supports_faststart(output: &Path) -> bool {
+    matches!(
+        output.extension().and_then(|ext| ext.to_str()).map(|ext| ext.to_ascii_lowercase()),
+        Some(ext) if matches!(ext.as_str(), "mp4" | "mov" | "m4v")
+    )
+}
+
 fn overlay_worker_count(plan: &OverlayPlan) -> usize {
     let total = plan.videos.len().max(1);
     let manual = plan.config.workers.max(1) as usize;
@@ -1593,6 +1983,23 @@ fn overlay_worker_count(plan: &OverlayPlan) -> usize {
 }
 
 fn watermark_worker_count(plan: &WatermarkPlan) -> usize {
+    let total = plan.videos.len().max(1);
+    let manual = plan.config.workers.max(1) as usize;
+    let cores = thread::available_parallelism().map(|n| n.get()).unwrap_or(4).max(1);
+    let auto = match plan.config.encoder.as_str() {
+        "cpu_libx264" => (cores / 2).max(1),
+        "auto" | "nvenc_h264" | "qsv_h264" | "amf_h264" | "nvidia_nvenc" | "intel_qsv" | "amd_amf" => 2.max(cores / 3),
+        _ => manual,
+    };
+    let selected = match plan.config.concurrency_mode.as_str() {
+        "safe" => ((auto as f64) * 0.75).floor().max(1.0) as usize,
+        "auto" => auto,
+        _ => manual,
+    };
+    selected.min(4).min(total)
+}
+
+fn dedup_worker_count(plan: &DedupPlan) -> usize {
     let total = plan.videos.len().max(1);
     let manual = plan.config.workers.max(1) as usize;
     let cores = thread::available_parallelism().map(|n| n.get()).unwrap_or(4).max(1);

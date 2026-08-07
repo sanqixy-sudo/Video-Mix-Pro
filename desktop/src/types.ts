@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 
-export type PageKey = "mix" | "overlay" | "watermark" | "tasks" | "auth" | "settings";
+export type PageKey = "mix" | "overlay" | "watermark" | "dedup" | "tasks" | "auth" | "settings";
 export type PlanKey = "month" | "quarter" | "half_year" | "year" | "permanent" | "none";
 export type EncoderKey = "cpu_libx264" | "intel_qsv" | "nvidia_nvenc" | "amd_amf" | "mixed_intel" | "mixed_nvidia" | "mixed_amd";
 export type ConflictStrategy = "skip" | "overwrite" | "suffix";
@@ -110,6 +110,20 @@ export interface WatermarkConfig {
   widthPercent: number;
   speed: number;
   opacity: number;
+  keepAudio: boolean;
+  encoder: string;
+  workers: number;
+  concurrencyMode: ConcurrencyMode;
+  conflictStrategy: ConflictStrategy;
+}
+
+export interface DedupConfig {
+  sourceFolder: string;
+  outputFolder: string;
+  randomBitrate: boolean;
+  dropFrames: boolean;
+  microSpeed: boolean;
+  subtleFilter: boolean;
   keepAudio: boolean;
   encoder: string;
   workers: number;
