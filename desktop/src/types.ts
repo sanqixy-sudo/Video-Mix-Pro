@@ -1,12 +1,18 @@
 import type { ComponentType } from "react";
 
-export type PageKey = "mix" | "overlay" | "watermark" | "dedup" | "tasks" | "auth" | "settings";
+export type PageKey = "mix" | "overlay" | "watermark" | "dedup" | "performance" | "tasks" | "auth" | "settings";
 export type PlanKey = "month" | "quarter" | "half_year" | "year" | "permanent" | "none";
 export type EncoderKey = "cpu_libx264" | "intel_qsv" | "nvidia_nvenc" | "amd_amf" | "mixed_intel" | "mixed_nvidia" | "mixed_amd";
 export type ConflictStrategy = "skip" | "overwrite" | "suffix";
 export type ConcurrencyMode = "manual" | "auto" | "safe";
 export type ToastTone = "success" | "warning" | "danger" | "info";
 export type ServerConnectionStatus = "checking" | "connected" | "failed";
+
+export interface PerformanceConfig {
+  encoder: EncoderKey;
+  workers: number;
+  concurrencyMode: ConcurrencyMode;
+}
 
 export interface AuthState {
   serverUrl: string;

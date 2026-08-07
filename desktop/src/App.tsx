@@ -9,15 +9,18 @@ import { MixWorkflowPage, type ScanViewState } from "./pages/MixWorkflowPage";
 import { OverlayPage } from "./pages/OverlayPage";
 import { WatermarkPage } from "./pages/WatermarkPage";
 import { DedupPage } from "./pages/DedupPage";
+import { PerformancePage } from "./pages/PerformancePage";
 import { TasksPage } from "./pages/TasksPage";
 import { AuthPage } from "./pages/AuthPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import type { AuthState, DedupConfig, Diagnostics, MaterialConfig, OverlayConfig, PageKey, RenderTaskStatus, ScanSummary, UpdateInfo, WatermarkConfig } from "./types";
+import { getEncoderOptions, recommendedEncoder } from "./lib/performance";
+import type { AuthState, DedupConfig, Diagnostics, MaterialConfig, OverlayConfig, PageKey, PerformanceConfig, RenderTaskStatus, ScanSummary, UpdateInfo, WatermarkConfig } from "./types";
 
 const LAST_MATERIALS_KEY = "video_mix_last_materials_v2";
 const LAST_OVERLAY_KEY = "video_mix_last_overlay_v2";
 const LAST_WATERMARK_KEY = "video_mix_last_watermark_v1";
 const LAST_DEDUP_KEY = "video_mix_last_dedup_v1";
+const LAST_PERFORMANCE_KEY = "video_mix_global_performance_v1";
 const MEMBERSHIP_VERIFY_INTERVAL_MS = 30 * 60 * 1000;
 
 export const defaultAuth: AuthState = {
@@ -123,6 +126,12 @@ export const defaultDedup: DedupConfig = {
   conflictStrategy: "skip",
 };
 
+export const defaultPerformance: PerformanceConfig = {
+  encoder: "cpu_libx264",
+  workers: 2,
+  concurrencyMode: "auto",
+};
+
 const fallbackScan: ScanSummary = {
   mainCount: 0,
   firstCount: 0,
@@ -168,6 +177,7 @@ export function App() {
   const [overlay, setOverlay] = useState<OverlayConfig>(() => loadStoredConfig(LAST_OVERLAY_KEY, defaultOverlay));
   const [watermark, setWatermark] = useState<WatermarkConfig>(() => loadStoredConfig(LAST_WATERMARK_KEY, defaultWatermark));
   const [dedup, setDedup] = useState<DedupConfig>(() => loadStoredConfig(LAST_DEDUP_KEY, defaultDedup));
+  const [performance, setPerformance] = useState<PerformanceConfig>(() => loadStoredConfig(LAST_PERFORMANCE_KEY, defaultPerformance));
   const [scan, setScan] = useState<ScanSummary>(fallbackScan);
   const [scanState, setScanState] = useState<ScanViewState>({ status: "idle", message: "" });
   const [diagnostics, setDiagnostics] = useState<Diagnostics>(fallbackDiagnostics);
@@ -185,7 +195,7 @@ export function App() {
   const scanRequestRef = useRef(0);
   const periodicVerifyRunningRef = useRef(false);
   const lastPeriodicVerifyErrorRef = useRef("");
-  const hadStoredMaterialsRef = useRef(localStorage.getItem(LAST_MATERIALS_KEY) !== null);
+  const hadStoredPerformanceRef = useRef(localStorage.getItem(LAST_PERFORMANCE_KEY) !== null);
   const taskSubmittedRef = useRef(false);
   const editSessionRecordedRef = useRef(false);
   const scanKey = useMemo(() => JSON.stringify({
@@ -205,9 +215,14 @@ export function App() {
     getDiagnostics()
       .then((result) => {
         setDiagnostics(result);
-        if (!hadStoredMaterialsRef.current) {
-          setMaterials((current) => ({ ...current, encoder: recommendedEncoder(result), concurrencyMode: "auto", workers: result.recommendedWorkers || current.workers }));
-        }
+        setPerformance((current) => {
+          const recommended = recommendedEncoder(result);
+          const selected = getEncoderOptions(result).find((item) => item.key === current.encoder);
+          if (!hadStoredPerformanceRef.current) {
+            return { encoder: recommended, concurrencyMode: "auto", workers: Math.min(4, Math.max(1, result.recommendedWorkers || 1)) };
+          }
+          return selected?.available === false ? { ...current, encoder: recommended } : current;
+        });
       })
       .catch(() => setDiagnostics(fallbackDiagnostics))
       .finally(() => setDiagnosticsReady(true));
@@ -357,6 +372,19 @@ export function App() {
   }, [dedup]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => localStorage.setItem(LAST_PERFORMANCE_KEY, JSON.stringify(performance)), 250);
+    return () => window.clearTimeout(timer);
+  }, [performance]);
+
+  useEffect(() => {
+    const patch = { encoder: performance.encoder, workers: performance.workers, concurrencyMode: performance.concurrencyMode };
+    setMaterials((current) => current.encoder === patch.encoder && current.workers === patch.workers && current.concurrencyMode === patch.concurrencyMode ? current : { ...current, ...patch });
+    setOverlay((current) => current.encoder === patch.encoder && current.workers === patch.workers && current.concurrencyMode === patch.concurrencyMode ? current : { ...current, ...patch });
+    setWatermark((current) => current.encoder === patch.encoder && current.workers === patch.workers && current.concurrencyMode === patch.concurrencyMode ? current : { ...current, ...patch });
+    setDedup((current) => current.encoder === patch.encoder && current.workers === patch.workers && current.concurrencyMode === patch.concurrencyMode ? current : { ...current, ...patch });
+  }, [performance]);
+
+  useEffect(() => {
     recordQueueOutcomes(taskStatus.queue);
   }, [taskStatus.queue]);
 
@@ -398,6 +426,11 @@ export function App() {
   const updateDedup = useCallback((patch: Partial<DedupConfig>) => {
     setSubmitError("");
     setDedup((current) => ({ ...current, ...patch }));
+  }, []);
+
+  const updatePerformance = useCallback((patch: Partial<PerformanceConfig>) => {
+    setSubmitError("");
+    setPerformance((current) => ({ ...current, ...patch, workers: Math.min(4, Math.max(1, patch.workers ?? current.workers)) }));
   }, []);
 
   const handleLogin = useCallback(async (username: string, password: string) => {
@@ -493,7 +526,8 @@ export function App() {
   const startTask = useCallback(async () => {
     if (queueSubmitting) return;
     recordStartAttempt();
-    const validationError = validateRenderStart(auth.active, materials, scan, scanState, diagnosticsReady, diagnostics);
+    const taskConfig = { ...materials, ...performance };
+    const validationError = validateRenderStart(auth.active, taskConfig, scan, scanState, diagnosticsReady, diagnostics);
     if (validationError) {
       recordStartFailure();
       setSubmitError(validationError);
@@ -504,7 +538,7 @@ export function App() {
     setSubmitError("");
     setQueueSubmitting(true);
     try {
-      const status = await startRenderTask(materials);
+      const status = await startRenderTask(taskConfig);
       setTaskStatus(status);
       recordTaskSubmitted();
       taskSubmittedRef.current = true;
@@ -519,12 +553,13 @@ export function App() {
     } finally {
       setQueueSubmitting(false);
     }
-  }, [auth.active, diagnostics, diagnosticsReady, materials, queueSubmitting, scan, scanState]);
+  }, [auth.active, diagnostics, diagnosticsReady, materials, performance, queueSubmitting, scan, scanState]);
 
   const startOverlay = useCallback(async () => {
     if (queueSubmitting) return;
     recordStartAttempt();
-    const validationError = validateOverlayStart(auth.active, overlay, diagnosticsReady, diagnostics);
+    const taskConfig = { ...overlay, ...performance };
+    const validationError = validateOverlayStart(auth.active, taskConfig, diagnosticsReady, diagnostics);
     if (validationError) {
       recordStartFailure();
       setSubmitError(validationError);
@@ -535,7 +570,7 @@ export function App() {
     setSubmitError("");
     setQueueSubmitting(true);
     try {
-      const status = await startOverlayTask(overlay);
+      const status = await startOverlayTask(taskConfig);
       setTaskStatus(status);
       recordTaskSubmitted();
       const unfinished = status.queue.filter((item) => item.status === "waiting" || item.status === "running" || item.status === "cancelling").length;
@@ -557,12 +592,13 @@ export function App() {
     } finally {
       setQueueSubmitting(false);
     }
-  }, [auth.active, diagnostics, diagnosticsReady, overlay, queueSubmitting]);
+  }, [auth.active, diagnostics, diagnosticsReady, overlay, performance, queueSubmitting]);
 
   const startWatermark = useCallback(async () => {
     if (queueSubmitting) return;
     recordStartAttempt();
-    const validationError = validateWatermarkStart(auth.active, watermark, diagnosticsReady, diagnostics);
+    const taskConfig = { ...watermark, ...performance };
+    const validationError = validateWatermarkStart(auth.active, taskConfig, diagnosticsReady, diagnostics);
     if (validationError) {
       recordStartFailure();
       setSubmitError(validationError);
@@ -573,7 +609,7 @@ export function App() {
     setSubmitError("");
     setQueueSubmitting(true);
     try {
-      const status = await startWatermarkTask(watermark);
+      const status = await startWatermarkTask(taskConfig);
       setTaskStatus(status);
       recordTaskSubmitted();
       const unfinished = status.queue.filter((item) => item.status === "waiting" || item.status === "running" || item.status === "cancelling").length;
@@ -586,12 +622,13 @@ export function App() {
     } finally {
       setQueueSubmitting(false);
     }
-  }, [auth.active, diagnostics, diagnosticsReady, queueSubmitting, watermark]);
+  }, [auth.active, diagnostics, diagnosticsReady, performance, queueSubmitting, watermark]);
 
   const startDedup = useCallback(async () => {
     if (queueSubmitting) return;
     recordStartAttempt();
-    const validationError = validateDedupStart(auth.active, dedup, diagnosticsReady, diagnostics);
+    const taskConfig = { ...dedup, ...performance };
+    const validationError = validateDedupStart(auth.active, taskConfig, diagnosticsReady, diagnostics);
     if (validationError) {
       recordStartFailure();
       setSubmitError(validationError);
@@ -602,7 +639,7 @@ export function App() {
     setSubmitError("");
     setQueueSubmitting(true);
     try {
-      const status = await startDedupTask(dedup);
+      const status = await startDedupTask(taskConfig);
       setTaskStatus(status);
       recordTaskSubmitted();
       const unfinished = status.queue.filter((item) => item.status === "waiting" || item.status === "running" || item.status === "cancelling").length;
@@ -615,7 +652,7 @@ export function App() {
     } finally {
       setQueueSubmitting(false);
     }
-  }, [auth.active, dedup, diagnostics, diagnosticsReady, queueSubmitting]);
+  }, [auth.active, dedup, diagnostics, diagnosticsReady, performance, queueSubmitting]);
 
   return (
     <div className={compact ? "app-shell compact" : "app-shell"}>
@@ -638,11 +675,13 @@ export function App() {
               onStart={startTask}
               onOpenAuth={() => setPage("auth")}
               onOpenTasks={() => setPage("tasks")}
+              onOpenPerformance={() => setPage("performance")}
             />
           )}
-          {page === "overlay" && <OverlayPage config={overlay} diagnostics={diagnostics} diagnosticsReady={diagnosticsReady} submitting={queueSubmitting} submitError={submitError} onUpdate={updateOverlay} onStart={startOverlay} />}
-          {page === "watermark" && <WatermarkPage config={watermark} diagnostics={diagnostics} diagnosticsReady={diagnosticsReady} submitting={queueSubmitting} submitError={submitError} taskStatus={taskStatus} onUpdate={updateWatermark} onStart={startWatermark} onOpenTasks={() => setPage("tasks")} />}
-          {page === "dedup" && <DedupPage config={dedup} diagnostics={diagnostics} diagnosticsReady={diagnosticsReady} submitting={queueSubmitting} submitError={submitError} taskStatus={taskStatus} onUpdate={updateDedup} onStart={startDedup} onOpenTasks={() => setPage("tasks")} />}
+          {page === "overlay" && <OverlayPage config={overlay} submitting={queueSubmitting} submitError={submitError} onUpdate={updateOverlay} onStart={startOverlay} onOpenPerformance={() => setPage("performance")} />}
+          {page === "watermark" && <WatermarkPage config={watermark} diagnostics={diagnostics} diagnosticsReady={diagnosticsReady} submitting={queueSubmitting} submitError={submitError} taskStatus={taskStatus} onUpdate={updateWatermark} onStart={startWatermark} onOpenTasks={() => setPage("tasks")} onOpenPerformance={() => setPage("performance")} />}
+          {page === "dedup" && <DedupPage config={dedup} diagnostics={diagnostics} diagnosticsReady={diagnosticsReady} submitting={queueSubmitting} submitError={submitError} taskStatus={taskStatus} onUpdate={updateDedup} onStart={startDedup} onOpenTasks={() => setPage("tasks")} onOpenPerformance={() => setPage("performance")} />}
+          {page === "performance" && <PerformancePage config={performance} diagnostics={diagnostics} diagnosticsReady={diagnosticsReady} onUpdate={updatePerformance} />}
           {page === "tasks" && <TasksPage status={taskStatus} onStatusChange={setTaskStatus} />}
           {page === "auth" && (
             <AuthPage auth={auth} action={authAction} error={authError} onAuthChange={(next) => { setAuthError(""); setAuth(next); }} onLogin={handleLogin} onRegister={handleRegister} onRedeem={handleRedeem} onVerify={handleVerify} onLogout={handleLogout} />
@@ -722,11 +761,4 @@ function validateDedupStart(active: boolean, dedup: DedupConfig, diagnosticsRead
   if (dedup.workers < 1 || dedup.workers > 4) return "并发处理需要在 1 - 4 路之间";
   if (diagnosticsReady && !diagnostics.hasFfmpeg) return "找不到 FFmpeg，请先在设置页确认组件状态";
   return "";
-}
-
-function recommendedEncoder(diagnostics: Diagnostics): MaterialConfig["encoder"] {
-  if (diagnostics.hasNvenc) return "nvidia_nvenc";
-  if (diagnostics.hasQsv) return "intel_qsv";
-  if (diagnostics.hasAmf) return "amd_amf";
-  return "cpu_libx264";
 }

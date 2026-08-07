@@ -1001,7 +1001,7 @@ fn validate_overlay_plan(app: &tauri::AppHandle, config: OverlayConfig) -> Resul
     };
     let ffprobe = find_binary(app, "ffprobe.exe", &source).or_else(|| find_binary(app, "ffprobe", &source));
     match config.encoder.as_str() {
-        "auto" | "nvenc_h264" | "qsv_h264" | "amf_h264" => validate_encoder(&ffmpeg, &config.encoder)?,
+        "auto" | "nvenc_h264" | "qsv_h264" | "amf_h264" | "nvidia_nvenc" | "intel_qsv" | "amd_amf" | "mixed_nvidia" | "mixed_intel" | "mixed_amd" => validate_encoder(&ffmpeg, &config.encoder)?,
         _ => validate_encoder(&ffmpeg, "cpu_libx264")?,
     }
     ensure_output_writable(&output)?;
@@ -1048,7 +1048,7 @@ fn validate_watermark_plan(app: &tauri::AppHandle, config: WatermarkConfig) -> R
         return Err("找不到 ffmpeg，请放入程序 bin 目录、素材目录或加入系统 PATH。".to_string());
     };
     match config.encoder.as_str() {
-        "auto" | "nvenc_h264" | "qsv_h264" | "amf_h264" | "nvidia_nvenc" | "intel_qsv" | "amd_amf" => validate_encoder(&ffmpeg, &config.encoder)?,
+        "auto" | "nvenc_h264" | "qsv_h264" | "amf_h264" | "nvidia_nvenc" | "intel_qsv" | "amd_amf" | "mixed_nvidia" | "mixed_intel" | "mixed_amd" => validate_encoder(&ffmpeg, &config.encoder)?,
         _ => validate_encoder(&ffmpeg, "cpu_libx264")?,
     }
     let ffprobe = find_binary(app, "ffprobe.exe", &source).or_else(|| find_binary(app, "ffprobe", &source));
@@ -1077,7 +1077,7 @@ fn validate_dedup_plan(app: &tauri::AppHandle, config: DedupConfig) -> Result<De
         return Err("找不到 ffmpeg，请放入程序 bin 目录、素材目录或加入系统 PATH。".to_string());
     };
     match config.encoder.as_str() {
-        "auto" | "nvenc_h264" | "qsv_h264" | "amf_h264" | "nvidia_nvenc" | "intel_qsv" | "amd_amf" => validate_encoder(&ffmpeg, &config.encoder)?,
+        "auto" | "nvenc_h264" | "qsv_h264" | "amf_h264" | "nvidia_nvenc" | "intel_qsv" | "amd_amf" | "mixed_nvidia" | "mixed_intel" | "mixed_amd" => validate_encoder(&ffmpeg, &config.encoder)?,
         _ => validate_encoder(&ffmpeg, "cpu_libx264")?,
     }
     let ffprobe = find_binary(app, "ffprobe.exe", &source).or_else(|| find_binary(app, "ffprobe", &source));
@@ -1971,13 +1971,14 @@ fn overlay_worker_count(plan: &OverlayPlan) -> usize {
     let cores = thread::available_parallelism().map(|n| n.get()).unwrap_or(4).max(1);
     let auto = match plan.config.encoder.as_str() {
         "cpu_libx264" => (cores / 2).max(1),
-        "auto" | "nvenc_h264" | "qsv_h264" | "amf_h264" => 2.max(cores / 3),
+        "mixed_nvidia" | "mixed_intel" | "mixed_amd" => (cores / 2).max(2),
+        "auto" | "nvenc_h264" | "qsv_h264" | "amf_h264" | "nvidia_nvenc" | "intel_qsv" | "amd_amf" => 2.max(cores / 3),
         _ => manual,
     };
     let selected = match plan.config.concurrency_mode.as_str() {
-        "safe" => ((auto as f64) * 0.75).floor().max(1.0) as usize,
+        "safe" => (((auto as f64) * 0.75).floor().max(1.0) as usize).min(manual),
         "manual" => manual,
-        _ => auto.min(manual.max(auto)),
+        _ => auto.min(manual),
     };
     selected.min(4).min(total)
 }
@@ -1988,12 +1989,13 @@ fn watermark_worker_count(plan: &WatermarkPlan) -> usize {
     let cores = thread::available_parallelism().map(|n| n.get()).unwrap_or(4).max(1);
     let auto = match plan.config.encoder.as_str() {
         "cpu_libx264" => (cores / 2).max(1),
+        "mixed_nvidia" | "mixed_intel" | "mixed_amd" => (cores / 2).max(2),
         "auto" | "nvenc_h264" | "qsv_h264" | "amf_h264" | "nvidia_nvenc" | "intel_qsv" | "amd_amf" => 2.max(cores / 3),
         _ => manual,
     };
     let selected = match plan.config.concurrency_mode.as_str() {
-        "safe" => ((auto as f64) * 0.75).floor().max(1.0) as usize,
-        "auto" => auto,
+        "safe" => (((auto as f64) * 0.75).floor().max(1.0) as usize).min(manual),
+        "auto" => auto.min(manual),
         _ => manual,
     };
     selected.min(4).min(total)
@@ -2005,12 +2007,13 @@ fn dedup_worker_count(plan: &DedupPlan) -> usize {
     let cores = thread::available_parallelism().map(|n| n.get()).unwrap_or(4).max(1);
     let auto = match plan.config.encoder.as_str() {
         "cpu_libx264" => (cores / 2).max(1),
+        "mixed_nvidia" | "mixed_intel" | "mixed_amd" => (cores / 2).max(2),
         "auto" | "nvenc_h264" | "qsv_h264" | "amf_h264" | "nvidia_nvenc" | "intel_qsv" | "amd_amf" => 2.max(cores / 3),
         _ => manual,
     };
     let selected = match plan.config.concurrency_mode.as_str() {
-        "safe" => ((auto as f64) * 0.75).floor().max(1.0) as usize,
-        "auto" => auto,
+        "safe" => (((auto as f64) * 0.75).floor().max(1.0) as usize).min(manual),
+        "auto" => auto.min(manual),
         _ => manual,
     };
     selected.min(4).min(total)
@@ -2102,11 +2105,11 @@ fn worker_count(plan: &RenderPlan) -> usize {
         _ => manual,
     };
     let selected = match plan.config.concurrency_mode.as_str() {
-        "auto" => auto,
-        "safe" => ((auto as f64) * 0.75).floor().max(1.0) as usize,
+        "auto" => auto.min(manual),
+        "safe" => (((auto as f64) * 0.75).floor().max(1.0) as usize).min(manual),
         _ => manual,
     };
-    selected.min(manual.max(selected)).min(8).min(output_count)
+    selected.min(4).min(output_count)
 }
 
 fn concurrency_label(mode: &str) -> &'static str {

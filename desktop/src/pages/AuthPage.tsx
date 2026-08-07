@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CircleDot, Clock3, KeyRound, LogOut } from "lucide-react";
 import type { AuthState } from "../types";
-import brandHorizontal from "../assets/brand-horizontal.png";
+import brandHorizontal from "../assets/brand-horizontal-dark.png";
 
 export function AuthPage({
   auth,

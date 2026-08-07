@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Activity, AlertTriangle, CheckCircle2, FolderOpen, ListChecks, Play } from "lucide-react";
 import { pickDirectory, pickFile } from "../lib/tauri";
 import { formatNumber, maxUniqueCount } from "../lib/math";
-import type { Diagnostics, EncoderKey, MaterialConfig, RenderTaskStatus, ScanSummary } from "../types";
+import { encoderLabel } from "../lib/performance";
+import type { Diagnostics, MaterialConfig, RenderTaskStatus, ScanSummary } from "../types";
 
 const MODE_KEY = "video_mix_workflow_mode";
 
@@ -26,6 +27,7 @@ export function MixWorkflowPage({
   onStart,
   onOpenAuth,
   onOpenTasks,
+  onOpenPerformance,
 }: {
   materials: MaterialConfig;
   scan: ScanSummary;
@@ -40,11 +42,10 @@ export function MixWorkflowPage({
   onStart: () => void;
   onOpenAuth: () => void;
   onOpenTasks: () => void;
+  onOpenPerformance: () => void;
 }) {
   const [mode, setMode] = useState<"simple" | "advanced">(() => localStorage.getItem(MODE_KEY) === "advanced" ? "advanced" : "simple");
-  const encoderOptions = useMemo(() => getEncoderOptions(diagnostics), [diagnostics]);
-  const recommendedEncoder = encoderOptions.find((item) => item.recommended)?.key || "cpu_libx264";
-  const selectedEncoder = encoderOptions.find((item) => item.key === materials.encoder);
+  const selectedEncoderLabel = encoderLabel(materials.encoder);
   const maxCombos = maxUniqueCount(scan.mainCount, materials.segmentCount, materials.allowRepeatInsideOneVideo);
   const repeatOverflow = Math.max(0, materials.outputCount - maxCombos);
   const unfinished = taskStatus.pendingCount + (taskStatus.running ? 1 : 0);
@@ -52,11 +53,6 @@ export function MixWorkflowPage({
   useEffect(() => {
     localStorage.setItem(MODE_KEY, mode);
   }, [mode]);
-
-  useEffect(() => {
-    if (!diagnosticsReady || selectedEncoder?.available !== false) return;
-    onUpdate({ encoder: recommendedEncoder });
-  }, [diagnosticsReady, onUpdate, recommendedEncoder, selectedEncoder?.available]);
 
   const blockingIssues = getBlockingIssues(materials, scan, scanState, diagnosticsReady, diagnostics);
   const canSubmit = blockingIssues.length === 0 && !submitting;
@@ -127,38 +123,6 @@ export function MixWorkflowPage({
             </div>
           </section>
 
-          <section className="workflow-step panel">
-            <StepHeader number={5} title="编码与性能" description="不可用的硬件编码器已经自动禁用" />
-            <div className="encoder-recommendation">
-              <div>
-                <strong>系统推荐：{encoderOptions.find((item) => item.key === recommendedEncoder)?.label}</strong>
-                <span>根据当前电脑的 FFmpeg 和硬件能力选择</span>
-              </div>
-              {materials.encoder !== recommendedEncoder && <button className="btn btn-secondary btn-sm" onClick={() => onUpdate({ encoder: recommendedEncoder })}>应用推荐</button>}
-            </div>
-            <div className="encoder-list compact-list">
-              {encoderOptions.map((item) => (
-                <label key={item.key} className={`${materials.encoder === item.key ? "encoder-option selected" : "encoder-option"}${item.available ? "" : " unavailable"}`}>
-                  <input type="radio" name="workflow-encoder" checked={materials.encoder === item.key} disabled={!item.available} onChange={() => onUpdate({ encoder: item.key })} />
-                  <div className="encoder-option-info">
-                    <strong>{item.label}{item.recommended ? " · 推荐" : ""}</strong>
-                    <span>{item.available ? item.description : `${item.description}（当前设备不可用）`}</span>
-                  </div>
-                </label>
-              ))}
-            </div>
-            <div className="workflow-two-columns workflow-performance-controls">
-              <div className="input-field">
-                <label>并发模式</label>
-                <select value={materials.concurrencyMode} onChange={(event) => onUpdate({ concurrencyMode: event.target.value as MaterialConfig["concurrencyMode"] })}>
-                  <option value="auto">自动推荐</option>
-                  <option value="safe">安全模式</option>
-                  <option value="manual">手动</option>
-                </select>
-              </div>
-              <NumberField label={materials.concurrencyMode === "manual" ? "并发数量" : "并发上限"} value={materials.workers} min={1} max={16} onChange={(workers) => onUpdate({ workers })} />
-            </div>
-          </section>
         </>
       )}
 
@@ -170,11 +134,12 @@ export function MixWorkflowPage({
           </div>
           <div className="task-ready-copy">
             <strong>{blockingIssues.length ? blockingIssues[0] : `准备完成：将生成 ${materials.outputCount} 条视频`}</strong>
-            <span>{submitError || `编码：${selectedEncoder?.label || "CPU"} · 输出：${materials.outputFolder || "素材目录 / output"}`}</span>
+            <span>{submitError || `全局编码：${selectedEncoderLabel} · 输出：${materials.outputFolder || "素材目录 / output"}`}</span>
           </div>
         </div>
         <div className="task-ready-actions">
           {unfinished > 0 && <button className="btn btn-ghost" onClick={onOpenTasks}>队列中 {unfinished} 个</button>}
+          <button className="btn btn-ghost" onClick={onOpenPerformance}>编码性能</button>
           {!authActive && <button className="btn btn-secondary" onClick={onOpenAuth}>登录会员</button>}
           <button className="btn btn-primary btn-lg" onClick={onStart} disabled={!canSubmit}>
             <Play size={16} />{submitting ? "正在提交..." : "加入任务队列"}
@@ -258,19 +223,6 @@ function getBlockingIssues(materials: MaterialConfig, scan: ScanSummary, scanSta
   if (!materials.allowRepeatInsideOneVideo && scan.mainCount > 0 && materials.segmentCount > scan.mainCount) issues.push("每条素材数不能超过主素材数量");
   if (diagnosticsReady && !diagnostics.hasFfmpeg) issues.push("未找到 FFmpeg，请检查安装组件");
   return issues;
-}
-
-function getEncoderOptions(diagnostics: Diagnostics): Array<{ key: EncoderKey; label: string; description: string; available: boolean; recommended: boolean }> {
-  const recommended: EncoderKey = diagnostics.hasNvenc ? "nvidia_nvenc" : diagnostics.hasQsv ? "intel_qsv" : diagnostics.hasAmf ? "amd_amf" : "cpu_libx264";
-  return [
-    { key: "cpu_libx264", label: "CPU · libx264", description: "兼容性最好", available: true, recommended: recommended === "cpu_libx264" },
-    { key: "nvidia_nvenc", label: "NVIDIA · NVENC", description: "NVIDIA 显卡硬件编码", available: diagnostics.hasNvenc, recommended: recommended === "nvidia_nvenc" },
-    { key: "intel_qsv", label: "Intel · QSV", description: "Intel 核显硬件编码", available: diagnostics.hasQsv, recommended: recommended === "intel_qsv" },
-    { key: "amd_amf", label: "AMD · AMF", description: "AMD 显卡硬件编码", available: diagnostics.hasAmf, recommended: recommended === "amd_amf" },
-    { key: "mixed_nvidia", label: "CPU + NVIDIA", description: "CPU 与 NVENC 混合并发", available: diagnostics.hasNvenc, recommended: false },
-    { key: "mixed_intel", label: "CPU + Intel", description: "CPU 与 QSV 混合并发", available: diagnostics.hasQsv, recommended: false },
-    { key: "mixed_amd", label: "CPU + AMD", description: "CPU 与 AMF 混合并发", available: diagnostics.hasAmf, recommended: false },
-  ];
 }
 
 function namingPreview(materials: MaterialConfig): string {

@@ -14,6 +14,7 @@ export function WatermarkPage({
   onUpdate,
   onStart,
   onOpenTasks,
+  onOpenPerformance,
 }: {
   config: WatermarkConfig;
   diagnostics: Diagnostics;
@@ -24,6 +25,7 @@ export function WatermarkPage({
   onUpdate: (patch: Partial<WatermarkConfig>) => void;
   onStart: () => void;
   onOpenTasks: () => void;
+  onOpenPerformance: () => void;
 }) {
   const [logoError, setLogoError] = useState(false);
   const logoSrc = useMemo(() => config.logoFile ? convertFileSrc(config.logoFile) : "", [config.logoFile]);
@@ -87,9 +89,9 @@ export function WatermarkPage({
           </div>
           <div className="watermark-options-row">
             <label className="checkbox-row"><input type="checkbox" checked={config.keepAudio} onChange={(event) => onUpdate({ keepAudio: event.target.checked })} /><span>保留原视频音频</span></label>
-            <label className="input-field watermark-workers"><span>并发处理</span><select value={config.workers} onChange={(event) => onUpdate({ workers: Number(event.target.value) })}><option value={1}>1 路</option><option value={2}>2 路</option><option value={3}>3 路</option><option value={4}>4 路</option></select></label>
             <label className="input-field watermark-workers"><span>同名文件</span><select value={config.conflictStrategy} onChange={(event) => onUpdate({ conflictStrategy: event.target.value as WatermarkConfig["conflictStrategy"] })}><option value="skip">跳过已存在</option><option value="overwrite">覆盖</option><option value="suffix">自动加后缀</option></select></label>
           </div>
+          <div className="global-performance-note"><span>编码器和并发统一使用全局设置。</span><button className="btn btn-secondary btn-sm" onClick={onOpenPerformance}>打开编码性能</button></div>
           {submitError && <div className="form-error">{submitError}</div>}
         </div>
 

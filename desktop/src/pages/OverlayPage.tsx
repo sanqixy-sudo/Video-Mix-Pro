@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { FolderOpen, Play } from "lucide-react";
 import { pickDirectory, pickFile, pickFiles } from "../lib/tauri";
-import type { Diagnostics, OverlayConfig } from "../types";
+import type { OverlayConfig } from "../types";
 
 const OUT_W = 1080;
 const OUT_H = 1920;
@@ -16,20 +16,18 @@ type Handle = "nw" | "ne" | "sw" | "se";
 
 export function OverlayPage({
   config,
-  diagnostics,
-  diagnosticsReady,
   submitting,
   submitError,
   onUpdate,
   onStart,
+  onOpenPerformance,
 }: {
   config: OverlayConfig;
-  diagnostics: Diagnostics;
-  diagnosticsReady: boolean;
   submitting: boolean;
   submitError: string;
   onUpdate: (patch: Partial<OverlayConfig>) => void;
   onStart: () => void;
+  onOpenPerformance: () => void;
 }) {
   const [videoAspect, setVideoAspect] = useState<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -271,7 +269,7 @@ export function OverlayPage({
             <Toggle label="保留原视频音频" value={config.keepAudio} onChange={() => onUpdate({ keepAudio: !config.keepAudio })} />
 
             <div className="panel-divider" />
-            <div className="panel-header"><span className="panel-title">编码参数</span></div>
+            <div className="panel-header"><span className="panel-title">输出质量</span></div>
             <div className="form-row">
               <NumberField label="FPS" value={config.fps} min={1} onChange={(fps) => onUpdate({ fps })} />
               <NumberField label="CRF" value={config.crf} min={0} max={51} onChange={(crf) => onUpdate({ crf })} />
@@ -283,26 +281,17 @@ export function OverlayPage({
               </select>
               <span className="input-hint">CRF 越小越清晰，推荐 18-23。</span>
             </div>
-            <div className="input-field">
-              <label>编码器</label>
-              <select value={config.encoder} onChange={(e) => onUpdate({ encoder: e.target.value })}>
-                <option value="auto">自动推荐</option>
-                <option value="cpu_libx264">CPU libx264</option>
-                <option value="nvenc_h264" disabled={diagnosticsReady && !diagnostics.hasNvenc}>NVIDIA NVENC{diagnosticsReady && !diagnostics.hasNvenc ? "（不可用）" : ""}</option>
-                <option value="qsv_h264" disabled={diagnosticsReady && !diagnostics.hasQsv}>Intel QSV{diagnosticsReady && !diagnostics.hasQsv ? "（不可用）" : ""}</option>
-                <option value="amf_h264" disabled={diagnosticsReady && !diagnostics.hasAmf}>AMD AMF{diagnosticsReady && !diagnostics.hasAmf ? "（不可用）" : ""}</option>
-              </select>
+            <div className="global-performance-note">
+              <span>编码器和并发统一使用左侧“编码性能”设置。</span>
+              <button className="btn btn-secondary btn-sm" onClick={onOpenPerformance}>打开编码性能</button>
             </div>
-            <div className="form-row">
-              <NumberField label="并发数" value={config.workers} min={1} max={4} onChange={(workers) => onUpdate({ workers })} />
-              <div className="input-field">
-                <label>重名处理</label>
-                <select value={config.conflictStrategy} onChange={(e) => onUpdate({ conflictStrategy: e.target.value as OverlayConfig["conflictStrategy"] })}>
-                  <option value="suffix">自动续号</option>
-                  <option value="overwrite">覆盖</option>
-                  <option value="skip">跳过</option>
-                </select>
-              </div>
+            <div className="input-field">
+              <label>重名处理</label>
+              <select value={config.conflictStrategy} onChange={(e) => onUpdate({ conflictStrategy: e.target.value as OverlayConfig["conflictStrategy"] })}>
+                <option value="suffix">自动续号</option>
+                <option value="overwrite">覆盖</option>
+                <option value="skip">跳过</option>
+              </select>
             </div>
 
             <div className="panel-divider" />
