@@ -1,6 +1,8 @@
 import {
   LayoutDashboard,
-  Activity,
+  Image,
+  ListPlus,
+  Video,
   Stamp,
   ShieldCheck,
   Settings,
@@ -9,10 +11,10 @@ import type { PageKey, AuthState } from "../types";
 
 const navItems: Array<{ key: PageKey; label: string; icon: typeof LayoutDashboard }> = [
   { key: "mix", label: "批量混剪", icon: LayoutDashboard },
-  { key: "overlay", label: "套外框", icon: Activity },
+  { key: "overlay", label: "套外框", icon: Image },
   { key: "watermark", label: "飘动水印", icon: Stamp },
-  { key: "dedup", label: "视频去重", icon: Activity },
-  { key: "tasks", label: "任务中心", icon: Activity },
+  { key: "dedup", label: "视频去重", icon: Video },
+  { key: "tasks", label: "任务中心", icon: ListPlus },
   { key: "auth", label: "授权中心", icon: ShieldCheck },
   { key: "settings", label: "设置", icon: Settings },
 ];
@@ -25,7 +27,12 @@ export function Sidebar({ page, onChange, auth, pendingTasks }: { page: PageKey;
           const Icon = item.icon;
           const active = page === item.key;
           return (
-            <button key={item.key} className={active ? "nav-item active" : "nav-item"} onClick={() => onChange(item.key)}>
+            <button
+              key={item.key}
+              className={`${active ? "nav-item active" : "nav-item"}${item.key === "tasks" ? " nav-system-start" : ""}`}
+              title={item.label}
+              onClick={() => onChange(item.key)}
+            >
               <Icon size={18} />
               <span>{item.label}</span>
               {item.key === "tasks" && pendingTasks > 0 && <span className="nav-badge">{pendingTasks}</span>}

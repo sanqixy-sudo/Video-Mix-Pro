@@ -185,6 +185,10 @@ textarea:focus-visible {
   color: var(--text-secondary);
 }
 
+.nav-item.nav-system-start {
+  margin-top: 8px;
+}
+
 .nav-item.active {
   background: var(--primary-light);
   color: var(--text-primary);
