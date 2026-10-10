@@ -7,7 +7,14 @@ __pycache__
 .env.*
 
 data
+web-admin/node_modules
+web-admin/dist
+.qa-data*
+tests
 **/*.db
 **/*.sqlite
 **/*.sqlite3
 **/backups
+
+.venv
+venv

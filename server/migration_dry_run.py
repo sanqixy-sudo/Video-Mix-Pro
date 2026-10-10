@@ -7,6 +7,7 @@ import json
 import sqlite3
 from pathlib import Path
 from typing import Any
+from admin_schema import EXTRA_COLUMNS
 
 
 EXPECTED_SCHEMA_COLUMNS = {
@@ -76,6 +77,16 @@ EXPECTED_SCHEMA_COLUMNS = {
     },
 }
 
+for _table, _columns in EXTRA_COLUMNS.items():
+    EXPECTED_SCHEMA_COLUMNS[_table].update(_columns)
+EXPECTED_SCHEMA_COLUMNS['sessions']['expires_at'] = 'TEXT'
+for _table, _columns in {
+    'admin_operations': ['operation_id', 'kind', 'status', 'payload', 'result', 'created_at'],
+    'code_batches': ['id', 'plan', 'custom_days', 'quantity', 'expires_at', 'note', 'created_at'],
+    'site_settings': ['id', 'content', 'updated_at'],
+}.items():
+    EXPECTED_SCHEMA_COLUMNS[_table] = dict.fromkeys(_columns, 'TEXT')
+
 PASSWORD_COLUMNS = ("password_hash", "password", "password_sha256", "passwd", "pwd")
 
 
@@ -128,7 +139,7 @@ def password_stats(conn: sqlite3.Connection, table: str, columns: set[str]) -> d
         kind = classify_hash(value)
         stats["formats"][kind] = stats["formats"].get(kind, 0) + 1
         if len(stats["samples"]) < 5:
-            stats["samples"].append({"format": kind, "prefix": value[:24], "length": len(value)})
+            stats["samples"].append({"format": kind, "length": len(value)})
     return stats
 
 

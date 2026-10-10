@@ -1,0 +1,11 @@
+{
+  "nsis_integrity": true,
+  "resource_hash_matches": {
+    "Video Mix Pro.exe": true,
+    "bin/ffmpeg.exe": true,
+    "bin/ffprobe.exe": true,
+    "WebView2Loader.dll": true,
+    "libunwind.dll": true
+  },
+  "global_install_test": false
+}

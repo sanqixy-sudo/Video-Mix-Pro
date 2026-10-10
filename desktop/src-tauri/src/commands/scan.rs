@@ -36,7 +36,12 @@ pub struct ScanSummary {
 }
 
 #[tauri::command]
-pub fn scan_materials(config: MaterialConfig) -> Result<ScanSummary, String> {
+pub async fn scan_materials(config: MaterialConfig) -> Result<ScanSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || scan(config)).await
+        .map_err(|_| "素材扫描失败".to_owned())?
+}
+
+fn scan(config: MaterialConfig) -> Result<ScanSummary, String> {
     let source = PathBuf::from(config.source_folder.trim());
     if !source.exists() || !source.is_dir() {
         return Ok(ScanSummary {
@@ -54,8 +59,9 @@ pub fn scan_materials(config: MaterialConfig) -> Result<ScanSummary, String> {
     } else {
         None
     };
-    let banner = selected_banner.or_else(|| auto_find_banner(&source));
-    let main_count = scan_videos(&source)
+    let videos = scan_videos(&source);
+    let banner = selected_banner.or_else(|| videos.iter().find(|path| is_banner_candidate(path)).cloned());
+    let main_count = videos
         .into_iter()
         .filter(|path| !is_banner_candidate(path))
         .filter(|path| banner.as_ref().map(|b| !same_path(b, path)).unwrap_or(true))
@@ -123,10 +129,6 @@ fn is_banner_candidate(path: &Path) -> bool {
     };
     let name = stem.to_ascii_lowercase();
     BANNER_KEYWORDS.iter().any(|keyword| name.contains(&keyword.to_ascii_lowercase()))
-}
-
-fn auto_find_banner(folder: &Path) -> Option<PathBuf> {
-    scan_videos(folder).into_iter().find(|path| is_banner_candidate(path))
 }
 
 fn same_path(left: &Path, right: &Path) -> bool {

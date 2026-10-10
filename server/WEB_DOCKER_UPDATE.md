@@ -1,3 +1,5 @@
+> 以下为 0.2.3 历史更新记录。0.3.0 的 Docker 多阶段构建与验收步骤请使用 [WEB_CONSOLE.md](WEB_CONSOLE.md)。
+
 # Web Docker 更新命令
 
 以下命令用于把本更新包部署到服务器上的会员后台 Docker。命令按 Linux 服务器写法；Windows 服务器可参考同名路径替换。

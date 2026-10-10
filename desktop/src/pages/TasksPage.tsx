@@ -1,3 +1,5 @@
+import { useRef, useState } from "react";
+import { showToast } from "../components/Toast";
 import { cancelRenderTask, clearFinishedTasks, clearPendingTasks, getRenderStatus, openDirectory, removeQueuedTask, retryQueueTask } from "../lib/tauri";
 import { recordRetryAttempt } from "../lib/analytics";
 import type { QueueTaskStatus, RenderTaskStatus } from "../types";
@@ -16,15 +18,28 @@ export function TasksPage({
     .reverse();
   const current = status.queue.find((item) => item.id === status.currentTaskId);
 
-  const handleRefresh = async () => onStatusChange(await getRenderStatus());
-  const handleCancel = async () => onStatusChange(await cancelRenderTask());
-  const handleRemove = async (taskId: string) => onStatusChange(await removeQueuedTask(taskId));
-  const handleClearPending = async () => onStatusChange(await clearPendingTasks());
-  const handleClearFinished = async () => onStatusChange(await clearFinishedTasks());
-  const handleRetry = async (taskId: string) => {
-    recordRetryAttempt();
-    onStatusChange(await retryQueueTask(taskId));
+  const busyRef = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const run = async (action: () => Promise<RenderTaskStatus | void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const result = await action();
+      if (result) onStatusChange(result);
+    } catch (error) {
+      showToast("danger", error instanceof Error ? error.message : String(error));
+    } finally { busyRef.current = false; setBusy(false); }
   };
+  const handleRefresh = () => run(getRenderStatus);
+  const handleCancel = () => run(cancelRenderTask);
+  const handleRemove = (id: string) => run(() => removeQueuedTask(id));
+  const handleClearPending = () => run(clearPendingTasks);
+  const handleClearFinished = () => run(clearFinishedTasks);
+  const handleRetry = (id: string) => run(async () => {
+    recordRetryAttempt();
+    return retryQueueTask(id);
+  });
 
   const handleExport = () => {
     const blob = new Blob([status.logs.join("\n")], { type: "text/plain;charset=utf-8" });
@@ -37,7 +52,7 @@ export function TasksPage({
   };
 
   return (
-    <div>
+    <div aria-busy={busy}>
       <h1 className="page-title">任务中心</h1>
       <p className="page-subtitle">任务会按提交顺序自动执行，可以继续配置并添加新任务</p>
 
@@ -69,8 +84,8 @@ export function TasksPage({
 
         <div className="dashboard-actions queue-actions">
           <button className="btn btn-secondary" onClick={handleRefresh}>刷新状态</button>
-          {status.outputFolder && <button className="btn btn-secondary" onClick={() => openDirectory(status.outputFolder)}>打开输出目录</button>}
-          <button className="btn btn-danger" onClick={handleCancel} disabled={!status.running}>取消当前任务</button>
+          {status.outputFolder && <button className="btn btn-secondary" onClick={() => void run(() => openDirectory(status.outputFolder))}>打开输出目录</button>}
+          <button className="btn btn-danger" onClick={handleCancel} disabled={busy || !status.running || status.cancelled}>取消当前任务</button>
         </div>
       </div>
 
@@ -97,7 +112,7 @@ export function TasksPage({
             <button className="btn btn-ghost btn-sm" onClick={handleClearFinished}>清空记录</button>
           </div>
           <div className="queue-list">
-            {finished.map((item) => <QueueItem key={item.id} item={item} onOpen={() => openDirectory(item.outputFolder)} onRetry={item.failed > 0 || item.status === "cancelled" ? () => handleRetry(item.id) : undefined} />)}
+            {finished.map((item) => <QueueItem key={item.id} item={item} onOpen={() => void run(() => openDirectory(item.outputFolder))} onRetry={item.failed > 0 || item.status === "cancelled" ? () => handleRetry(item.id) : undefined} />)}
           </div>
         </div>
       )}

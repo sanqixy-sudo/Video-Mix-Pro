@@ -1,0 +1,165 @@
+{
+  "checks": [
+    "current-client-screenshot",
+    "login-restores-url-page",
+    "explicit-cross-page-selection",
+    "query-url-and-selection-reset",
+    "detail-renewal-and-focus-restoration",
+    "generate-100-response-lost-retry-single-persistent-batch",
+    "release-draft-survives-refresh",
+    "all-routes-1440-1280-390-no-page-overflow",
+    "mobile-membership-workflow",
+    "200-percent-zoom-no-page-overflow",
+    "empty-state",
+    "stale-search-response-cannot-overwrite",
+    "countdown-preserves-editor-focus",
+    "500-retry-recovery",
+    "contact-plan-and-keyboard-close",
+    "session-expiry-recovery-path"
+  ],
+  "viewports": [
+    {
+      "width": 1440,
+      "route": "users",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "route": "codes",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "route": "batches",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "route": "overview",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "route": "releases",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "route": "site",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "route": "audit",
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "route": "users",
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "route": "codes",
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "route": "batches",
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "route": "overview",
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "route": "releases",
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "route": "site",
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "route": "audit",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "users",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "codes",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "batches",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "overview",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "releases",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "site",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "route": "audit",
+      "overflow": false
+    }
+  ],
+  "console_errors": [],
+  "accessibility": [
+    {
+      "route": "users",
+      "width": 390,
+      "violations": []
+    },
+    {
+      "route": "codes",
+      "width": 390,
+      "violations": []
+    },
+    {
+      "route": "batches",
+      "width": 390,
+      "violations": []
+    },
+    {
+      "route": "overview",
+      "width": 390,
+      "violations": []
+    },
+    {
+      "route": "releases",
+      "width": 390,
+      "violations": []
+    },
+    {
+      "route": "site",
+      "width": 390,
+      "violations": []
+    },
+    {
+      "route": "audit",
+      "width": 390,
+      "violations": []
+    }
+  ]
+}

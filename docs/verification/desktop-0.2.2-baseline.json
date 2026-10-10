@@ -1,0 +1,51 @@
+{
+  "errors": [],
+  "webview_version": "Edg/155.0.4283.45",
+  "app_version": "0.2.2",
+  "diagnostics": {
+    "ffmpegPath": "\\\\?\\C:\\Users\\sanqi\\Desktop\\项目文件夹\\video_mix_membership_re_removed_clean_full_pack\\video_mix_membership_re_removed_clean_full_pack\\.packaging\\baseline-0.2.2\\bin\\ffmpeg.exe",
+    "ffprobePath": "\\\\?\\C:\\Users\\sanqi\\Desktop\\项目文件夹\\video_mix_membership_re_removed_clean_full_pack\\video_mix_membership_re_removed_clean_full_pack\\.packaging\\baseline-0.2.2\\bin\\ffprobe.exe",
+    "hasFfmpeg": true,
+    "hasFfprobe": true,
+    "hasQsv": true,
+    "hasScaleQsv": true,
+    "hasVppQsv": true,
+    "hasNvenc": false,
+    "hasAmf": false,
+    "recommendedWorkers": 2
+  },
+  "repeated_diagnostics_ms": [
+    1377.92,
+    1195.83,
+    1292.72
+  ],
+  "isolated_portable_state": true,
+  "public_service": {
+    "status": 200,
+    "data": {
+      "ok": true,
+      "status": "ok",
+      "time": "2026-10-10T08:12:56.018505+00:00",
+      "app_version": "0.2.1",
+      "server_version": "0.3.0"
+    }
+  },
+  "updates": {
+    "status": 200,
+    "data": {
+      "channel": "stable",
+      "latest_version": "0.2.1",
+      "minimum_version": "0.2.0",
+      "title": "Video Mix Pro 0.2.1",
+      "notes": "## Video Mix Pro v0.2.1\n\n本次更新重点完善批量处理能力、硬件编码选择和便携版运行体验。\n\n### 新增功能\n\n- 新增批量视频去重功能，支持整文件夹处理\n- 支持随机码率、轻微变速、抽帧和低感知滤镜\n- 新增飘动水印，可选择 Logo 并加入任务队列\n- 新增全局“编码与性能”设置，统一应用到混剪、去重、水印等任务\n- 自动检测 Intel、NVIDIA、AMD 与 CPU 编码能力\n\n### 优化改进\n\n- 输入、输出均支持整文件夹选择\n- 默认自动创建“去重”或“水印版”输出文件夹\n- 输出视频保持原素材文件名\n- 优化左侧导航栏、Logo 布局和文字对比度\n- 优化多文件便携版启动速度\n- 修复没有 NVIDIA 显卡时仍推荐 NVIDIA 编码的问题\n\n### 问题修复\n\n- 补齐 WebView2Loader.dll 等运行组件\n- 修复部分电脑便携版无法启动的问题\n- 修复任务中心与侧栏 Logo 重叠\n- 修复部分页面文字颜色过浅的问题",
+      "download_url": "https://github.com/sanqixy-sudo/Video-Mix-Pro/releases/download/v0.2.1/VideoMixPro_0.2.1_Setup.exe",
+      "sha256": "02DB5702021E1E2B7E9047E93526F70B559559D3BB7D1E47D3F835BBC6B855DC",
+      "is_mandatory": false,
+      "updated_at": "2026-08-07T11:37:13.684462+00:00",
+      "current_version": "0.2.2",
+      "update_available": false,
+      "required": false
+    }
+  },
+  "native_startup": true
+}

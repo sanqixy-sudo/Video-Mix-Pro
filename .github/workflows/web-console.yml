@@ -1,0 +1,65 @@
+name: Web console acceptance
+on:
+  push:
+    branches: [main]
+    tags: ['web-v*']
+    paths: ['server/**', '.github/workflows/web-console.yml']
+  pull_request:
+    paths: ['server/**', '.github/workflows/web-console.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/web-admin/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r server/requirements-dev.txt
+      - run: npm ci && npm run build && npm audit --omit=dev
+        working-directory: server/web-admin
+      - run: python -m unittest discover -s tests -v
+        working-directory: server
+      - run: python tests/docker_acceptance.py
+        working-directory: server
+  publish:
+    if: startsWith(github.ref, 'refs/tags/web-v')
+    needs: acceptance
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Web version and image name
+        shell: bash
+        run: |
+          version=$(python -c "import json; print(json.load(open('server/web-admin/package.json'))['version'])")
+          test "$GITHUB_REF_NAME" = "web-v$version"
+          echo "WEB_VERSION=$version" >> "$GITHUB_ENV"
+          echo "WEB_IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-web" >> "$GITHUB_ENV"
+      - name: Build and publish Web image
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io' EXIT
+          docker build server \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.version=$WEB_VERSION" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --tag "$WEB_IMAGE:$WEB_VERSION" \
+            --tag "$WEB_IMAGE:sha-$GITHUB_SHA" \
+            --tag "$WEB_IMAGE:latest"
+          docker push "$WEB_IMAGE:$WEB_VERSION"
+          docker push "$WEB_IMAGE:sha-$GITHUB_SHA"
+          docker push "$WEB_IMAGE:latest"
+          echo "Published $WEB_IMAGE:$WEB_VERSION" >> "$GITHUB_STEP_SUMMARY"

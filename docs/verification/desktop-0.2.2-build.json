@@ -1,0 +1,29 @@
+{
+  "version": "0.2.2",
+  "executable_bytes": 13858816,
+  "executable_sha256": "0ea01bad5e65da95f026549f30f8a81bd10e15e22f564402c60bccf8f5194f37",
+  "runtime": {
+    "url": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/01b0fbd9-6ea3-4e12-818a-a71f73f3855b/Microsoft.WebView2.FixedVersionRuntime.155.0.4283.45.x64.cab",
+    "file": "Microsoft.WebView2.FixedVersionRuntime.155.0.4283.45.x64.cab",
+    "sha256": "ec533bf1b7354d288703cf821a2d640d0130108224f93e330bb9c09faf3f8010",
+    "bytes": 310544938
+  },
+  "native_smoke": "desktop-0.2.2-native.json",
+  "media_smoke": "desktop-0.2.2-media.json",
+  "artifacts": [
+    {
+      "file": "VideoMixPro_0.2.2_Setup.exe",
+      "bytes": 94778988,
+      "sha256": "0a28c5c8c56a9ba3b36393ebf253f492c807a81e0c24afee5910c54b4aac51e4"
+    },
+    {
+      "file": "VideoMixPro_0.2.2_Portable.zip",
+      "bytes": 460849076,
+      "sha256": "e7550be4392d783bb7cd9450343e41192e90bbc49f7540326b6eb7f0181687f7"
+    }
+  ],
+  "installer_verification": "desktop-0.2.2-installer.json",
+  "final_zip_smoke": "desktop-0.2.2-zip.json",
+  "delivery_manifest_verified": true,
+  "manifest_files": 265
+}

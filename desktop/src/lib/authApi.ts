@@ -110,8 +110,8 @@ async function apiPost(serverUrl: string, path: string, payload: Record<string, 
 
 async function apiRequest(serverUrl: string, path: string, init: RequestInit): Promise<AuthResponse & Record<string, unknown>> {
   const base = serverUrl.replace(/\/+$/, "");
-  if (!/^https?:\/\//i.test(base)) {
-    throw new Error("服务器地址必须以 http:// 或 https:// 开头");
+  if (base !== "https://videomix.7cloudvps.com") {
+    throw new Error("请在设置中恢复官方会员服务器 https://videomix.7cloudvps.com");
   }
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);

@@ -1,3 +1,5 @@
+Web 0.3.0 更新说明：新的管理后台构建、配置、数据库迁移与回退步骤见 WEB_CONSOLE.md。旧 0.2.3 说明保留作历史参考。
+
 Video Mix Tool 会员后台 Docker
 
 部署地址：

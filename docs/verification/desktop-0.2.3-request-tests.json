@@ -1,0 +1,12 @@
+{
+  "errors": [],
+  "runtime": "isolated Edge with simulated IPC",
+  "stale_scan_after_clear_ignored": true,
+  "out_of_order_scan_ignored": true,
+  "slow_poll_with_manual_refresh": {
+    "active": 0,
+    "max": 1,
+    "calls": 1,
+    "slow": true
+  }
+}

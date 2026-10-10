@@ -53,8 +53,8 @@ export function SettingsPage({
   const applyServerUrl = () => {
     const nextUrl = customServerUrl.trim().replace(/\/+$/, "");
     if (!nextUrl) return;
-    if (!/^https?:\/\//i.test(nextUrl)) {
-      setConnection({ status: "failed", message: "服务器地址必须以 http:// 或 https:// 开头", checkedAt: "" });
+    if (nextUrl !== "https://videomix.7cloudvps.com") {
+      setConnection({ status: "failed", message: "正式版仅支持官方会员服务器 https://videomix.7cloudvps.com", checkedAt: "" });
       return;
     }
     if (auth.token) void logoutAccount(auth.serverUrl, auth.token).catch(() => undefined);
@@ -149,19 +149,19 @@ export function SettingsPage({
             </div>
           </div>
           <div className="input-field" style={{ marginTop: 12 }}>
-            <label>更换会员服务器</label>
+            <label>恢复官方会员服务器</label>
             <div className="input-with-btn">
               <input
                 type="text"
                 value={customServerUrl}
                 onChange={(e) => setCustomServerUrl(e.target.value)}
-                placeholder="https://example.com"
+                placeholder="https://videomix.7cloudvps.com"
               />
               <button className="btn btn-secondary btn-sm" onClick={applyServerUrl} disabled={!customServerUrl.trim()}>
                 保存
               </button>
             </div>
-            <span className="input-hint">更换地址会注销并清除当前登录，需要在会员页重新登录。</span>
+            <span className="input-hint">正式版仅连接官方会员服务器；保存会注销当前账号，需要重新登录。</span>
           </div>
           <button className="btn btn-danger btn-sm" onClick={onLogout}>
             退出登录并注销会话

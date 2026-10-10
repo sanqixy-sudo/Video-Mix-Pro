@@ -1,0 +1,99 @@
+{
+  "environment": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.10",
+    "sqlite": "3.49.1",
+    "users": 10000,
+    "codes": 100000,
+    "samples": 12,
+    "scope": "sync service queries, warm cache; not a production SLA"
+  },
+  "before_indexes": {
+    "users_first": {
+      "median_ms": 0.823,
+      "p95_ms": 1.694,
+      "total": 10000
+    },
+    "users_expiring": {
+      "median_ms": 2.647,
+      "p95_ms": 5.153,
+      "total": 784
+    },
+    "codes_first": {
+      "median_ms": 2.321,
+      "p95_ms": 4.901,
+      "total": 100000
+    },
+    "codes_available": {
+      "median_ms": 34.503,
+      "p95_ms": 43.167,
+      "total": 57142
+    },
+    "codes_search_one": {
+      "median_ms": 1.024,
+      "p95_ms": 2.927,
+      "total": 1
+    },
+    "codes_batch": {
+      "median_ms": 0.866,
+      "p95_ms": 0.965,
+      "total": 1000
+    },
+    "batches_first": {
+      "median_ms": 9.907,
+      "p95_ms": 11.238,
+      "total": 100
+    }
+  },
+  "batch_plan_before": [
+    "SEARCH c USING INDEX idx_redeem_codes_batch_id (batch_id=?)",
+    "USE TEMP B-TREE FOR ORDER BY"
+  ],
+  "batch_plan_after": [
+    "SEARCH c USING INDEX idx_codes_batch_order (batch_id=?)"
+  ],
+  "after_indexes": {
+    "users_first": {
+      "median_ms": 1.164,
+      "p95_ms": 4.051,
+      "total": 10000
+    },
+    "users_expiring": {
+      "median_ms": 2.635,
+      "p95_ms": 4.356,
+      "total": 784
+    },
+    "codes_first": {
+      "median_ms": 2.367,
+      "p95_ms": 6.297,
+      "total": 100000
+    },
+    "codes_available": {
+      "median_ms": 11.333,
+      "p95_ms": 14.546,
+      "total": 57142
+    },
+    "codes_search_one": {
+      "median_ms": 2.521,
+      "p95_ms": 3.679,
+      "total": 1
+    },
+    "codes_batch": {
+      "median_ms": 1.368,
+      "p95_ms": 2.633,
+      "total": 1000
+    },
+    "batches_first": {
+      "median_ms": 16.046,
+      "p95_ms": 18.236,
+      "total": 100
+    }
+  },
+  "export": {
+    "codes": 100000,
+    "chunks": 202,
+    "bytes": 5523900,
+    "peak_python_bytes": 750017,
+    "seconds_with_tracemalloc": 2.94
+  }
+}

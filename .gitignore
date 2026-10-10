@@ -11,6 +11,8 @@ node_modules/
 
 # Frontend / Tauri build outputs
 desktop/dist/
+server/web-admin/dist/
+server/web-admin/*.tsbuildinfo
 desktop/src-tauri/target/
 desktop/src-tauri/gen/schemas/
 
@@ -47,3 +49,10 @@ release/
 *.rar
 .DS_Store
 Thumbs.db
+
+# Locally downloaded packaging tools / WebView2 runtime
+.packaging/
+
+# Production deployment evidence remains local; synthetic acceptance stays public.
+docs/verification/deployment-*
+docs/verification/production-*

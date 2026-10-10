@@ -1,0 +1,25 @@
+warning: linker stdout: 正在创建库 C:\Users\sanqi\Desktop\项目文件夹\video_mix_membership_re_removed_clean_full_pack\video_mix_membership_re_removed_clean_full_pack\desktop\src-tauri\target\release\deps\video_mix_pro_lib-97ecc89d552b0475.lib 和对象 C:\Users\sanqi\Desktop\项目文件夹\video_mix_membership_re_removed_clean_full_pack\video_mix_membership_re_removed_clean_full_pack\desktop\src-tauri\target\release\deps\video_mix_pro_lib-97ecc89d552b0475.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `video-mix-pro` (lib test) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.41s
+     Running unittests src\lib.rs (desktop\src-tauri\target\release\deps\video_mix_pro_lib-97ecc89d552b0475.exe)
+
+running 13 tests
+test commands::auth::tests::official_https_health ... ignored, read-only live HTTPS diagnostic
+test commands::auth::tests::local_active_flag_is_not_authorization ... ok
+test commands::render::tests::concurrent_progress_counts_work_not_video_ordinal ... ok
+test commands::auth::tests::rejects_fake_servers_before_sending_credentials ... ok
+test process::tests::output_is_bounded_even_without_newlines ... ok
+test commands::render::tests::cancelled_publish_preserves_existing_output ... ok
+test commands::auth::tests::validates_membership_expiry_device_and_session ... ok
+test commands::auth::tests::remote_verification_accepts_only_valid_success_responses ... ok
+test commands::render::tests::retired_history_releases_archived_plans ... ok
+test process::tests::silent_process_has_a_deadline ... ok
+test process::tests::silent_process_can_be_cancelled ... ok
+test commands::auth::tests::network_timeout_fails_closed ... ok
+MEDIA_REPORT=C:\Users\sanqi\Desktop\项目文件夹\video_mix_membership_re_removed_clean_full_pack\video_mix_membership_re_removed_clean_full_pack\desktop\src-tauri\target\desktop-smoke-task-1791619734207-8\report.json
+test commands::render::tests::real_media_workflows_cache_failure_and_cancel ... ok
+
+test result: ok. 12 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.31s

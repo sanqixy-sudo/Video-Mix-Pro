@@ -1,7 +1,11 @@
 mod commands;
+mod portable;
+mod process;
+mod media;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    portable::prepare();
     tauri::Builder::default()
         .manage(commands::render::RenderState::default())
         .plugin(tauri_plugin_shell::init())

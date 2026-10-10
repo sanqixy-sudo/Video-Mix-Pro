@@ -1,0 +1,32 @@
+{
+  "version": "0.2.3",
+  "executable_bytes": 18204672,
+  "executable_sha256": "005c11c202df2d75be7eed79e5c7c46c7010c7266fc7228ff9545c7edfa287c2",
+  "versions_consistent": true,
+  "frontend_entry_kb": 249.91,
+  "frontend_entry_gzip_kb": 77.98,
+  "previous_entry_kb": 296.49,
+  "previous_entry_gzip_kb": 89.34,
+  "rust_tests_passed": 12,
+  "live_https_health_passed": true,
+  "media_report": "desktop-0.2.3-media.json",
+  "installer_verification": "desktop-0.2.3-installer.json",
+  "frontend_request_regressions": "desktop-0.2.3-request-tests.json",
+  "windows_dll_dependencies": "Windows system DLLs and UCRT; no additional VCRUNTIME/MSVCP dynamic dependency",
+  "artifacts": [
+    {
+      "file": "VideoMixPro_0.2.3_Setup.exe",
+      "bytes": 96156688,
+      "sha256": "ccf453aefa3955b5485bfee2379b6866d8151c89fdd4046e8897f6d9c64a79c3"
+    },
+    {
+      "file": "VideoMixPro_0.2.3_Portable.zip",
+      "bytes": 462642985,
+      "sha256": "589bc2e21292bbc8775d710864dac5a171256840dde614987bd6a2163f7433c7"
+    }
+  ],
+  "delivery_manifest_verified": true,
+  "manifest_files": 265,
+  "final_zip_native_verification": "desktop-0.2.3-native.json",
+  "final_zip_native_passed": true
+}

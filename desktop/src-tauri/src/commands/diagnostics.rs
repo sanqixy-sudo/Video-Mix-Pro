@@ -1,10 +1,13 @@
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Command;
+use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 use serde::Serialize;
 use tauri::Manager;
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Diagnostics {
     pub ffmpeg_path: String,
@@ -20,7 +23,19 @@ pub struct Diagnostics {
 }
 
 #[tauri::command]
-pub fn get_diagnostics(app: tauri::AppHandle) -> Result<Diagnostics, String> {
+pub async fn get_diagnostics(app: tauri::AppHandle) -> Result<Diagnostics, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        // Share concurrent startup requests; detect once per process.
+        static CACHE: OnceLock<Mutex<Option<Diagnostics>>> = OnceLock::new();
+        let mut cache = CACHE.get_or_init(|| Mutex::new(None)).lock().map_err(|_| "组件检测不可用".to_owned())?;
+        if let Some(value) = cache.as_ref() { return Ok(value.clone()); }
+        let value = detect(&app)?;
+        *cache = Some(value.clone());
+        Ok(value)
+    }).await.map_err(|_| "组件检测失败".to_owned())?
+}
+
+fn detect(app: &tauri::AppHandle) -> Result<Diagnostics, String> {
     let ffmpeg = find_sidecar_or_path(&app, "ffmpeg.exe").or_else(|| find_sidecar_or_path(&app, "ffmpeg"));
     let ffprobe = find_sidecar_or_path(&app, "ffprobe.exe").or_else(|| find_sidecar_or_path(&app, "ffprobe"));
 
@@ -94,10 +109,10 @@ fn command_output(path: &PathBuf, args: &[&str]) -> Option<String> {
     let mut command = Command::new(path);
     command.args(args);
     hide_command_window(&mut command);
-    let output = command.output().ok()?;
+    let output = crate::process::run(command, &AtomicBool::new(false), Some(Duration::from_secs(10)), |_| {}).ok()?;
     let mut text = String::new();
-    text.push_str(&String::from_utf8_lossy(&output.stdout));
-    text.push_str(&String::from_utf8_lossy(&output.stderr));
+    text.push_str(&output.stdout);
+    text.push_str(&output.stderr);
     Some(text)
 }
 
@@ -112,11 +127,10 @@ fn detected_gpu_names() -> String {
             "(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) -join [Environment]::NewLine",
         ]);
         hide_command_window(&mut command);
-        return command
-            .output()
+        return crate::process::run(command, &AtomicBool::new(false), Some(Duration::from_secs(10)), |_| {})
             .ok()
             .filter(|output| output.status.success())
-            .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
+            .map(|output| output.stdout.to_string())
             .unwrap_or_default();
     }
 
@@ -145,9 +159,9 @@ fn encoder_works(ffmpeg: &PathBuf, encoder: &str) -> bool {
         "null",
         "-",
     ]);
-    command.stdout(Stdio::null()).stderr(Stdio::null());
+
     hide_command_window(&mut command);
-    command.status().map(|status| status.success()).unwrap_or(false)
+    crate::process::run(command, &AtomicBool::new(false), Some(Duration::from_secs(10)), |_| {}).map(|output| output.status.success()).unwrap_or(false)
 }
 
 fn hide_command_window(command: &mut Command) {

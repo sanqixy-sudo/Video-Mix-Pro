@@ -1,3 +1,10 @@
+FROM node:24-bookworm-slim AS admin-build
+WORKDIR /build
+COPY web-admin/package.json web-admin/package-lock.json ./
+RUN npm ci
+COPY web-admin/ ./
+RUN npm run build
+
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -8,6 +15,8 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py /app/app.py
+COPY admin_schema.py admin_service.py admin_routes.py /app/
+COPY --from=admin-build /build/dist /app/web-admin/dist
 COPY templates /app/templates
 COPY static /app/static
 RUN groupadd --system --gid 10001 appuser \

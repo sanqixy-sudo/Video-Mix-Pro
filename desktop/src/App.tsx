@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getDiagnostics, getRenderStatus, loadAuthState, scanMaterials, saveAuthState, startDedupTask, startOverlayTask, startRenderTask, startWatermarkTask } from "./lib/tauri";
 import { checkForUpdates, loginAccount, logoutAccount, redeemCode, registerAccount, verifyAccount } from "./lib/authApi";
 import { recordPostSubmitEditSession, recordQueueOutcomes, recordStartAttempt, recordStartFailure, recordTaskSubmitted } from "./lib/analytics";
@@ -7,13 +7,13 @@ import { TitleBar } from "./components/TitleBar";
 import { Sidebar } from "./components/Sidebar";
 import { ForcedUpdateDialog } from "./components/ForcedUpdateDialog";
 import { MixWorkflowPage, type ScanViewState } from "./pages/MixWorkflowPage";
-import { OverlayPage } from "./pages/OverlayPage";
-import { WatermarkPage } from "./pages/WatermarkPage";
-import { DedupPage } from "./pages/DedupPage";
-import { PerformancePage } from "./pages/PerformancePage";
-import { TasksPage } from "./pages/TasksPage";
-import { AuthPage } from "./pages/AuthPage";
-import { SettingsPage } from "./pages/SettingsPage";
+const OverlayPage = lazy(() => import("./pages/OverlayPage").then(module => ({ default: module.OverlayPage })));
+const WatermarkPage = lazy(() => import("./pages/WatermarkPage").then(module => ({ default: module.WatermarkPage })));
+const DedupPage = lazy(() => import("./pages/DedupPage").then(module => ({ default: module.DedupPage })));
+const PerformancePage = lazy(() => import("./pages/PerformancePage").then(module => ({ default: module.PerformancePage })));
+const TasksPage = lazy(() => import("./pages/TasksPage").then(module => ({ default: module.TasksPage })));
+const AuthPage = lazy(() => import("./pages/AuthPage").then(module => ({ default: module.AuthPage })));
+const SettingsPage = lazy(() => import("./pages/SettingsPage").then(module => ({ default: module.SettingsPage })));
 import { getEncoderOptions, recommendedEncoder } from "./lib/performance";
 import type { AuthState, DedupConfig, Diagnostics, MaterialConfig, OverlayConfig, PageKey, PerformanceConfig, RenderTaskStatus, ScanSummary, UpdateInfo, WatermarkConfig } from "./types";
 
@@ -190,7 +190,7 @@ export function App() {
   const [submitError, setSubmitError] = useState("");
   const [authAction, setAuthAction] = useState<"login" | "register" | "verify" | "redeem" | null>(null);
   const [authError, setAuthError] = useState("");
-  const [currentVersion, setCurrentVersion] = useState("0.2.1");
+  const [currentVersion, setCurrentVersion] = useState("0.2.3");
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateError, setUpdateError] = useState("");
@@ -231,7 +231,7 @@ export function App() {
     loadAuthState()
       .then(async (stored) => {
         const merged = { ...defaultAuth, ...stored, serverUrl: stored.serverUrl || defaultAuth.serverUrl };
-        setAuth(merged);
+        setAuth({ ...merged, active: false });
         if (!merged.token) return;
         setAuthAction("verify");
         try {
@@ -259,7 +259,7 @@ export function App() {
     setUpdateChecking(true);
     setUpdateError("");
     try {
-      let version = "0.2.1";
+      let version = "0.2.3";
       if ("__TAURI_INTERNALS__" in window) {
         const { getVersion } = await import("@tauri-apps/api/app");
         version = await getVersion();
@@ -285,10 +285,17 @@ export function App() {
 
   useEffect(() => {
     if (page !== "tasks" && !taskStatus.running && taskStatus.pendingCount <= 0) return;
-    const timer = window.setInterval(() => {
-      getRenderStatus().then(setTaskStatus).catch(() => undefined);
-    }, 1000);
-    return () => window.clearInterval(timer);
+    let disposed = false;
+    let timer = 0;
+    const poll = async () => {
+      try {
+        const result = await getRenderStatus();
+        if (!disposed) setTaskStatus(current => JSON.stringify(current) === JSON.stringify(result) ? current : result);
+      } catch { /* Keep the last known state and retry. */ }
+      if (!disposed) timer = window.setTimeout(poll, taskStatus.running || taskStatus.pendingCount > 0 ? 1000 : 5000);
+    };
+    timer = window.setTimeout(poll, 1000);
+    return () => { disposed = true; window.clearTimeout(timer); };
   }, [page, taskStatus.pendingCount, taskStatus.running]);
 
   useEffect(() => {
@@ -334,12 +341,12 @@ export function App() {
   }, [auth.serverUrl, auth.token, currentVersion]);
 
   useEffect(() => {
+    const requestId = ++scanRequestRef.current;
     if (!materials.sourceFolder.trim()) {
       setScan(fallbackScan);
       setScanState({ status: "idle", message: "" });
       return;
     }
-    const requestId = ++scanRequestRef.current;
     setScanState({ status: "scanning", message: "正在扫描视频素材…" });
     const timer = window.setTimeout(() => {
       scanMaterials(materials)
@@ -354,7 +361,10 @@ export function App() {
           setScanState({ status: "error", message: `扫描失败：${readableError(error)}` });
         });
     }, 320);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      if (scanRequestRef.current === requestId) scanRequestRef.current++;
+    };
   }, [scanKey]);
 
   useEffect(() => {
@@ -402,12 +412,16 @@ export function App() {
   }, []);
 
   const persistAuth = useCallback(async (next: AuthState) => {
+    await saveAuthState(next);
     setAuth(next);
-    await saveAuthState(next).catch(() => undefined);
   }, []);
 
   const handleAuthChange = useCallback((next: AuthState) => {
-    persistAuth(next);
+    void persistAuth(next).catch(error => {
+      const message = `无法保存登录设置：${readableError(error)}`;
+      setAuthError(message);
+      showToast("danger", message);
+    });
   }, [persistAuth]);
 
   const updateMaterials = useCallback((patch: Partial<MaterialConfig>) => {
@@ -519,7 +533,14 @@ export function App() {
   const handleLogout = useCallback(async () => {
     const previous = auth;
     const next = { ...defaultAuth, serverUrl: auth.serverUrl };
-    await persistAuth(next);
+    try {
+      await persistAuth(next);
+    } catch (error) {
+      const message = `无法清除本地登录状态：${readableError(error)}`;
+      setAuthError(message);
+      showToast("danger", message);
+      return;
+    }
     setAuthError("");
     showToast("info", "已退出登录");
     if (previous.token) {
@@ -668,6 +689,7 @@ export function App() {
       <Sidebar page={page} onChange={setPage} auth={auth} pendingTasks={taskStatus.pendingCount + (taskStatus.running ? 1 : 0)} updateInfo={updateInfo} blocked={forceUpdate} />
       <main className="content-viewport" inert={forceUpdate ? true : undefined} aria-hidden={forceUpdate || undefined}>
         <div className="content-inner">
+          <Suspense fallback={<div className="panel" role="status">正在加载页面…</div>}>
           {page === "mix" && (
             <MixWorkflowPage
               materials={materials}
@@ -697,6 +719,7 @@ export function App() {
           {page === "settings" && (
             <SettingsPage auth={auth} diagnostics={diagnostics} diagnosticsReady={diagnosticsReady} currentVersion={currentVersion} updateInfo={updateInfo} updateChecking={updateChecking} updateError={updateError} onCheckUpdates={() => void checkUpdates(true)} onAuthChange={handleAuthChange} onLogout={handleLogout} />
           )}
+          </Suspense>
         </div>
       </main>
       {updateInfo?.required && (

@@ -55,16 +55,32 @@
     const headers = new Headers(options.headers || {});
     if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     if ((options.method || "GET").toUpperCase() !== "GET") headers.set("X-CSRF-Token", csrfToken);
-    const response = await fetch(path, { credentials: "same-origin", ...options, headers });
+    let pendingKey = null;
+    if (options.body && /\/(user_action|user_batch_action|create_codes|code_action)$/.test(path)) {
+      const original = options.body;
+      const body = JSON.parse(original);
+      // Passwords are never persisted in browser storage.
+      if (!["change_password", "delete_user"].includes(body.action)) {
+        pendingKey = `vmp.legacy-operation:${path}`;
+        const prior = JSON.parse(sessionStorage.getItem(pendingKey) || "null");
+        if (prior && prior.original !== original) throw new Error("上次请求结果尚未确认，请先用原内容重试，或在新版后台查询操作记录。");
+        body.operation_id = prior?.id || crypto.randomUUID();
+        sessionStorage.setItem(pendingKey, JSON.stringify({ original, id: body.operation_id }));
+        options = { ...options, body: JSON.stringify(body) };
+      }
+    }
+    const response = await fetch(path, { credentials: "same-origin", signal: AbortSignal.timeout(20000), ...options, headers });
     const text = await response.text();
     let payload = {};
     if (text) {
       try { payload = JSON.parse(text); } catch { payload = { detail: text }; }
     }
     if (!response.ok) {
+      if (pendingKey && response.status >= 400 && response.status < 500 && response.status !== 401) sessionStorage.removeItem(pendingKey);
       if (response.status === 401) window.location.reload();
       throw new Error(errorMessage(payload, response.status));
     }
+    if (pendingKey) sessionStorage.removeItem(pendingKey);
     return payload;
   }
 
@@ -380,6 +396,7 @@
     renderCodes();
     renderPagination("codesPagination", state.codes, (nextPage) => void run(() => loadCodes(nextPage)));
     byId("exportCodesButton").href = url("/admin/api/codes/export", {
+      q: byId("codeSearch").value,
       status: byId("codeStatus").value,
       batch_id: byId("codeBatch").value,
     });

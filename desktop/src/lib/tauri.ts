@@ -103,9 +103,11 @@ export async function startDedupTask(config: DedupConfig): Promise<RenderTaskSta
   return invoke<RenderTaskStatus>("start_dedup_task", { config });
 }
 
+let statusRequest: Promise<RenderTaskStatus> | null = null;
 export async function getRenderStatus(): Promise<RenderTaskStatus> {
   if (!isTauriRuntime()) return fallbackRenderStatus;
-  return invoke<RenderTaskStatus>("get_render_status");
+  if (!statusRequest) statusRequest = invoke<RenderTaskStatus>("get_render_status").finally(() => { statusRequest = null; });
+  return statusRequest;
 }
 
 export async function cancelRenderTask(): Promise<RenderTaskStatus> {

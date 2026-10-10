@@ -31,7 +31,7 @@ class SecurityFlowTests(unittest.TestCase):
                 "RATE_LIMIT_ENABLED": "true",
             }
         )
-        cls.server = importlib.import_module("app")
+        cls.server = importlib.reload(importlib.import_module("app"))
         cls.client_context = TestClient(cls.server.app)
         cls.client = cls.client_context.__enter__()
 

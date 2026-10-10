@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#050506">
+  <meta name="theme-color" content="#f4f6fa">
   <title>Video Mix Pro 管理后台</title>
   <link rel="icon" href="/static/brand/favicon.ico">
-  <link rel="stylesheet" href="/static/admin.css?v=20260807-024">
+  <link rel="stylesheet" href="/static/admin-login.css?v=030-20261010-2">
 </head>
 <body class="admin-login-page">
-  <div class="admin-ambient" aria-hidden="true"><i></i><i></i><b></b></div>
+
   <main class="login-shell">
     <section class="login-card">
-      <a class="admin-brand" href="/" aria-label="返回官网"><img src="/static/brand/logo-horizontal.png" alt="Video Mix Pro"></a>
+      <a class="admin-brand" href="/" aria-label="返回官网"><img src="/static/brand/logo-mark.png" alt=""><span>Video Mix Pro</span></a>
       <div class="login-copy"><span>ADMIN CONSOLE</span><h1>登录管理后台</h1><p>会员、设备与版本发布统一管理。</p></div>
       <form id="loginForm" novalidate>
         <label><span>管理员账号</span><input id="username" name="username" autocomplete="username" required placeholder="请输入管理员账号"></label>
@@ -20,9 +20,9 @@
         <button class="admin-button primary" id="loginButton" type="submit">安全登录</button>
         <p class="form-message" id="loginMessage" role="status"></p>
       </form>
-      <footer><span>受 CSRF 与登录限流保护</span><code>__BUILD_ID__</code></footer>
+      <footer>管理用户、会员与兑换码 · <a href="/">返回官网</a></footer>
     </section>
   </main>
-  <script src="/static/admin-login.js?v=20260807-020" defer></script>
+  <script src="/static/admin-login.js?v=030-20261010-2" defer></script>
 </body>
 </html>

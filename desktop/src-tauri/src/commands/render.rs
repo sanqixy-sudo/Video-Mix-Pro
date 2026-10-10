@@ -1,7 +1,7 @@
 use std::fs;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread;
@@ -9,6 +9,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
+
+#[cfg(test)]
+#[path = "render_tests.rs"]
+mod tests;
 
 const VIDEO_EXTS: &[&str] = &["mp4", "mov", "mkv", "avi", "webm", "m4v", "flv", "wmv", "ts"];
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "bmp"];
@@ -39,6 +43,7 @@ struct QueuedTask {
     id: String,
     plan: QueuedTaskPlan,
     item: QueueTaskStatus,
+    authorization: Option<super::auth::Credentials>,
 }
 
 #[derive(Clone)]
@@ -72,6 +77,8 @@ pub struct RenderTaskStatus {
     pub cancelled: bool,
     pub status: String,
     pub progress: u8,
+    #[serde(skip)]
+    in_flight: HashMap<u32, f64>,
     pub completed: u32,
     pub failed: u32,
     pub total: u32,
@@ -86,6 +93,7 @@ pub struct RenderTaskStatus {
 impl Default for RenderTaskStatus {
     fn default() -> Self {
         Self {
+            in_flight: HashMap::new(),
             running: false,
             cancelled: false,
             status: "就绪".to_string(),
@@ -239,6 +247,7 @@ struct RenderPlan {
     output: PathBuf,
     ffmpeg: PathBuf,
     ffprobe: Option<PathBuf>,
+    probes: Arc<crate::media::ProbeCache>,
     videos: Vec<PathBuf>,
     first_videos: Vec<PathBuf>,
     top_videos: Vec<PathBuf>,
@@ -254,6 +263,7 @@ struct OverlayPlan {
     output: PathBuf,
     ffmpeg: PathBuf,
     ffprobe: Option<PathBuf>,
+    probes: Arc<crate::media::ProbeCache>,
 }
 
 #[derive(Clone)]
@@ -265,6 +275,7 @@ struct WatermarkPlan {
     output: PathBuf,
     ffmpeg: PathBuf,
     ffprobe: Option<PathBuf>,
+    probes: Arc<crate::media::ProbeCache>,
 }
 
 #[derive(Clone)]
@@ -275,6 +286,7 @@ struct DedupPlan {
     output: PathBuf,
     ffmpeg: PathBuf,
     ffprobe: Option<PathBuf>,
+    probes: Arc<crate::media::ProbeCache>,
 }
 
 #[derive(Clone)]
@@ -356,14 +368,18 @@ impl DedupVariant {
 }
 
 #[tauri::command]
-pub fn start_render_task(
+pub async fn start_render_task(
     app: tauri::AppHandle,
-    state: tauri::State<RenderState>,
+    state: tauri::State<'_, RenderState>,
     config: RenderConfig,
 ) -> Result<RenderTaskStatus, String> {
-    let plan = validate_plan(&app, config)?;
-    let task = queued_render_task(plan);
-    enqueue_task(&state, task)
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let authorization = super::auth::require_membership()?;
+        let plan = validate_plan(&app, config)?;
+        let task = queued_render_task(plan);
+        enqueue_task(&state, task, authorization)
+    }).await.map_err(|_| "提交任务失败".to_owned())?
 }
 
 #[tauri::command]
@@ -385,36 +401,48 @@ pub fn cancel_render_task(state: tauri::State<RenderState>) -> Result<RenderTask
 }
 
 #[tauri::command]
-pub fn start_overlay_task(
+pub async fn start_overlay_task(
     app: tauri::AppHandle,
-    state: tauri::State<RenderState>,
+    state: tauri::State<'_, RenderState>,
     config: OverlayConfig,
 ) -> Result<RenderTaskStatus, String> {
-    let plan = validate_overlay_plan(&app, config)?;
-    let task = queued_overlay_task(plan);
-    enqueue_task(&state, task)
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let authorization = super::auth::require_membership()?;
+        let plan = validate_overlay_plan(&app, config)?;
+        let task = queued_overlay_task(plan);
+        enqueue_task(&state, task, authorization)
+    }).await.map_err(|_| "提交任务失败".to_owned())?
 }
 
 #[tauri::command]
-pub fn start_watermark_task(
+pub async fn start_watermark_task(
     app: tauri::AppHandle,
-    state: tauri::State<RenderState>,
+    state: tauri::State<'_, RenderState>,
     config: WatermarkConfig,
 ) -> Result<RenderTaskStatus, String> {
-    let plan = validate_watermark_plan(&app, config)?;
-    let task = queued_watermark_task(plan);
-    enqueue_task(&state, task)
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let authorization = super::auth::require_membership()?;
+        let plan = validate_watermark_plan(&app, config)?;
+        let task = queued_watermark_task(plan);
+        enqueue_task(&state, task, authorization)
+    }).await.map_err(|_| "提交任务失败".to_owned())?
 }
 
 #[tauri::command]
-pub fn start_dedup_task(
+pub async fn start_dedup_task(
     app: tauri::AppHandle,
-    state: tauri::State<RenderState>,
+    state: tauri::State<'_, RenderState>,
     config: DedupConfig,
 ) -> Result<RenderTaskStatus, String> {
-    let plan = validate_dedup_plan(&app, config)?;
-    let task = queued_dedup_task(plan);
-    enqueue_task(&state, task)
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let authorization = super::auth::require_membership()?;
+        let plan = validate_dedup_plan(&app, config)?;
+        let task = queued_dedup_task(plan);
+        enqueue_task(&state, task, authorization)
+    }).await.map_err(|_| "提交任务失败".to_owned())?
 }
 
 #[tauri::command]
@@ -478,10 +506,13 @@ pub fn clear_finished_tasks(state: tauri::State<RenderState>) -> Result<RenderTa
 }
 
 #[tauri::command]
-pub fn retry_queue_task(
-    state: tauri::State<RenderState>,
+pub async fn retry_queue_task(
+    state: tauri::State<'_, RenderState>,
     task_id: String,
 ) -> Result<RenderTaskStatus, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+    let authorization = super::auth::require_membership()?;
     let plan = state
         .task_archive
         .lock()
@@ -495,7 +526,8 @@ pub fn retry_queue_task(
         QueuedTaskPlan::Watermark(plan) => queued_watermark_task_with_retry(plan, true),
         QueuedTaskPlan::Dedup(plan) => queued_dedup_task_with_retry(plan, true),
     };
-    enqueue_task(&state, task)
+    enqueue_task(&state, task, authorization)
+    }).await.map_err(|_| "重试任务失败".to_owned())?
 }
 
 fn queued_render_task(plan: RenderPlan) -> QueuedTask {
@@ -525,7 +557,7 @@ fn queued_render_task_with_retry(mut plan: RenderPlan, is_retry: bool) -> Queued
         created_at: unix_millis() as u64,
         is_retry,
     };
-    QueuedTask { id, plan: QueuedTaskPlan::Render(plan), item }
+    QueuedTask { id, plan: QueuedTaskPlan::Render(plan), item, authorization: None }
 }
 
 fn queued_overlay_task(plan: OverlayPlan) -> QueuedTask {
@@ -550,7 +582,7 @@ fn queued_overlay_task_with_retry(mut plan: OverlayPlan, is_retry: bool) -> Queu
         created_at: unix_millis() as u64,
         is_retry,
     };
-    QueuedTask { id, plan: QueuedTaskPlan::Overlay(plan), item }
+    QueuedTask { id, plan: QueuedTaskPlan::Overlay(plan), item, authorization: None }
 }
 
 fn queued_watermark_task(plan: WatermarkPlan) -> QueuedTask {
@@ -580,7 +612,7 @@ fn queued_watermark_task_with_retry(mut plan: WatermarkPlan, is_retry: bool) -> 
         created_at: unix_millis() as u64,
         is_retry,
     };
-    QueuedTask { id, plan: QueuedTaskPlan::Watermark(plan), item }
+    QueuedTask { id, plan: QueuedTaskPlan::Watermark(plan), item, authorization: None }
 }
 
 fn queued_dedup_task(plan: DedupPlan) -> QueuedTask {
@@ -610,15 +642,19 @@ fn queued_dedup_task_with_retry(mut plan: DedupPlan, is_retry: bool) -> QueuedTa
         created_at: unix_millis() as u64,
         is_retry,
     };
-    QueuedTask { id, plan: QueuedTaskPlan::Dedup(plan), item }
+    QueuedTask { id, plan: QueuedTaskPlan::Dedup(plan), item, authorization: None }
 }
 
-fn enqueue_task(state: &RenderState, task: QueuedTask) -> Result<RenderTaskStatus, String> {
+fn enqueue_task(state: &RenderState, mut task: QueuedTask, authorization: super::auth::Credentials) -> Result<RenderTaskStatus, String> {
+    task.authorization = Some(authorization);
     let item = task.item.clone();
     let archived_plan = task.plan.clone();
     {
         let mut items = state.queue_items.lock().map_err(|_| "任务队列不可用".to_string())?;
-        prune_queue_history(&mut items);
+        let removed = prune_queue_history(&mut items);
+        if let Ok(mut archive) = state.task_archive.lock() {
+            for id in removed { archive.remove(&id); }
+        }
         items.push(item);
     }
     state
@@ -671,6 +707,17 @@ fn run_queue_loop(state: RenderState) {
         }
         set_queue_item_running(&state.queue_items, &task.id);
 
+        let authorization = task.authorization.as_ref()
+            .ok_or_else(|| "任务缺少有效授权".to_owned())
+            .and_then(super::auth::revalidate_membership);
+        if let Err(error) = authorization {
+            if let Ok(mut status) = state.inner.lock() {
+                status.running = false;
+                status.failed = status.total;
+                status.status = "授权验证失败".into();
+                push_log(&mut status, error);
+            }
+        } else {
         match task.plan {
             QueuedTaskPlan::Render(plan) => run_render_task(plan, state.inner.clone(), state.cancel.clone()),
             QueuedTaskPlan::Overlay(plan) => run_overlay_task(plan, state.inner.clone(), state.cancel.clone()),
@@ -678,6 +725,7 @@ fn run_queue_loop(state: RenderState) {
             QueuedTaskPlan::Dedup(plan) => run_dedup_task(plan, state.inner.clone(), state.cancel.clone()),
         }
 
+        }
         let final_status = state.inner.lock().ok().map(|status| status.clone());
         if let Some(final_status) = final_status {
             finish_queue_item(&state.queue_items, &task.id, &final_status);
@@ -690,6 +738,7 @@ fn run_queue_loop(state: RenderState) {
 
 fn initial_render_status(plan: &RenderPlan, task_id: &str) -> RenderTaskStatus {
     let mut status = RenderTaskStatus {
+        in_flight: HashMap::new(),
         running: true,
         cancelled: false,
         status: "运行中".to_string(),
@@ -732,6 +781,7 @@ fn initial_render_status(plan: &RenderPlan, task_id: &str) -> RenderTaskStatus {
 
 fn initial_overlay_status(plan: &OverlayPlan, task_id: &str) -> RenderTaskStatus {
     let mut status = RenderTaskStatus {
+        in_flight: HashMap::new(),
         running: true,
         cancelled: false,
         status: "运行中".to_string(),
@@ -754,6 +804,7 @@ fn initial_overlay_status(plan: &OverlayPlan, task_id: &str) -> RenderTaskStatus
 
 fn initial_watermark_status(plan: &WatermarkPlan, task_id: &str) -> RenderTaskStatus {
     let mut status = RenderTaskStatus {
+        in_flight: HashMap::new(),
         running: true,
         cancelled: false,
         status: "运行中".to_string(),
@@ -778,6 +829,7 @@ fn initial_watermark_status(plan: &WatermarkPlan, task_id: &str) -> RenderTaskSt
 
 fn initial_dedup_status(plan: &DedupPlan, task_id: &str) -> RenderTaskStatus {
     let mut status = RenderTaskStatus {
+        in_flight: HashMap::new(),
         running: true,
         cancelled: false,
         status: "运行中".to_string(),
@@ -813,7 +865,7 @@ fn snapshot_status(state: &RenderState) -> Result<RenderTaskStatus, String> {
         .map_err(|_| "任务状态不可用".to_string())?
         .clone();
     let mut items = state.queue_items.lock().map_err(|_| "任务队列不可用".to_string())?.clone();
-    if !status.current_task_id.is_empty() {
+    if status.running && !status.current_task_id.is_empty() {
         if let Some(item) = items.iter_mut().find(|item| item.id == status.current_task_id) {
             item.status = if status.cancelled { "cancelling" } else { "running" }.to_string();
             item.progress = status.progress;
@@ -852,14 +904,16 @@ fn finish_queue_item(items: &Arc<Mutex<Vec<QueueTaskStatus>>>, task_id: &str, st
     }
 }
 
-fn prune_queue_history(items: &mut Vec<QueueTaskStatus>) {
+fn prune_queue_history(items: &mut Vec<QueueTaskStatus>) -> Vec<String> {
+    let mut removed = Vec::new();
     while items.len() >= 50 {
         if let Some(index) = items.iter().position(|item| !matches!(item.status.as_str(), "waiting" | "running" | "cancelling")) {
-            items.remove(index);
+            removed.push(items.remove(index).id);
         } else {
             break;
         }
     }
+    removed
 }
 
 fn next_task_id() -> String {
@@ -936,7 +990,7 @@ fn validate_plan(app: &tauri::AppHandle, config: RenderConfig) -> Result<RenderP
     validate_encoder(&ffmpeg, &config.encoder)?;
     let ffprobe = find_binary(app, "ffprobe.exe", &source).or_else(|| find_binary(app, "ffprobe", &source));
 
-    Ok(RenderPlan { config, source, output, ffmpeg, ffprobe, videos, first_videos, top_videos, tail_videos, banner })
+    Ok(RenderPlan { probes: Arc::default(), config, source, output, ffmpeg, ffprobe, videos, first_videos, top_videos, tail_videos, banner })
 }
 
 fn validate_overlay_plan(app: &tauri::AppHandle, config: OverlayConfig) -> Result<OverlayPlan, String> {
@@ -1006,7 +1060,7 @@ fn validate_overlay_plan(app: &tauri::AppHandle, config: OverlayConfig) -> Resul
     }
     ensure_output_writable(&output)?;
 
-    Ok(OverlayPlan { config, frame, videos, output, ffmpeg, ffprobe })
+    Ok(OverlayPlan { probes: Arc::default(), config, frame, videos, output, ffmpeg, ffprobe })
 }
 
 fn validate_watermark_plan(app: &tauri::AppHandle, config: WatermarkConfig) -> Result<WatermarkPlan, String> {
@@ -1053,7 +1107,7 @@ fn validate_watermark_plan(app: &tauri::AppHandle, config: WatermarkConfig) -> R
     }
     let ffprobe = find_binary(app, "ffprobe.exe", &source).or_else(|| find_binary(app, "ffprobe", &source));
 
-    Ok(WatermarkPlan { config, source, logo, videos, output, ffmpeg, ffprobe })
+    Ok(WatermarkPlan { probes: Arc::default(), config, source, logo, videos, output, ffmpeg, ffprobe })
 }
 
 fn validate_dedup_plan(app: &tauri::AppHandle, config: DedupConfig) -> Result<DedupPlan, String> {
@@ -1082,7 +1136,7 @@ fn validate_dedup_plan(app: &tauri::AppHandle, config: DedupConfig) -> Result<De
     }
     let ffprobe = find_binary(app, "ffprobe.exe", &source).or_else(|| find_binary(app, "ffprobe", &source));
 
-    Ok(DedupPlan { config, source, videos, output, ffmpeg, ffprobe })
+    Ok(DedupPlan { probes: Arc::default(), config, source, videos, output, ffmpeg, ffprobe })
 }
 
 fn run_watermark_task(plan: WatermarkPlan, state: Arc<Mutex<RenderTaskStatus>>, cancel: Arc<AtomicBool>) {
@@ -1123,19 +1177,23 @@ fn run_watermark_task(plan: WatermarkPlan, state: Arc<Mutex<RenderTaskStatus>>, 
                 let requested = plan_ref.output.join(output_name);
                 let Some(out_file) = resolve_output_path_with_strategy(&requested, &plan_ref.config.conflict_strategy) else {
                     log_state(&state_ref, format!("[{index}] 输出已存在，按 skip 策略跳过：{}", file_name(&requested)));
-                    mark_completed(&state_ref, format!("跳过：{}", file_name(&requested)));
+                    mark_completed(&state_ref, index, format!("跳过：{}", file_name(&requested)));
                     continue;
                 };
                 log_state(&state_ref, format!("[{index}] 开始添加飘动水印：{}", file_name(video)));
-                match run_watermark_ffmpeg(plan_ref, video, &out_file, index, total, &state_ref, &cancel_ref) {
-                    Ok(()) => mark_completed(&state_ref, file_name(&out_file)),
+                let staging = staging_path(&out_file);
+                let result = run_watermark_ffmpeg(plan_ref, video, &staging, index, total, &state_ref, &cancel_ref)
+                    .and_then(|_| publish_output(&staging, &out_file, &cancel_ref));
+                if result.is_err() { let _ = fs::remove_file(&staging); }
+                match result {
+                    Ok(()) => mark_completed(&state_ref, index, file_name(&out_file)),
                     Err(err) => {
                         if cancel_ref.load(Ordering::SeqCst) {
                             log_state(&state_ref, format!("[{index}] 已取消当前 FFmpeg：{}", file_name(video)));
                             break;
                         }
                         log_state(&state_ref, err.chars().take(3000).collect::<String>());
-                        mark_failed(&state_ref, format!("[{index}] 飘动水印处理失败：{}", file_name(video)));
+                        mark_failed(&state_ref, index, format!("[{index}] 飘动水印处理失败：{}", file_name(video)));
                     }
                 }
             });
@@ -1192,7 +1250,7 @@ fn run_watermark_ffmpeg(
     cmd.args(["-map_metadata", "0", "-shortest", "-progress", "pipe:1", "-nostats"]);
     cmd.arg(out_file);
 
-    run_progress_cmd(cmd, plan.ffprobe.as_deref(), video, index, total, state, cancel)
+    run_progress_cmd(cmd, &plan.probes, plan.ffprobe.as_deref(), video, index, total, state, cancel)
 }
 
 fn run_dedup_task(plan: DedupPlan, state: Arc<Mutex<RenderTaskStatus>>, cancel: Arc<AtomicBool>) {
@@ -1236,30 +1294,30 @@ fn run_dedup_task(plan: DedupPlan, state: Arc<Mutex<RenderTaskStatus>>, cancel: 
                 let requested = plan_ref.output.join(output_name);
                 let Some(out_file) = resolve_output_path_with_strategy(&requested, &plan_ref.config.conflict_strategy) else {
                     log_state(&state_ref, format!("[{index}] 输出已存在，按 skip 策略跳过：{}", file_name(&requested)));
-                    mark_completed(&state_ref, format!("跳过：{}", file_name(&requested)));
+                    mark_completed(&state_ref, index, format!("跳过：{}", file_name(&requested)));
                     continue;
                 };
-                let output_existed_before = out_file.exists();
                 let has_audio = plan_ref.config.keep_audio
                     && plan_ref
                         .ffprobe
                         .as_deref()
-                        .map(|ffprobe| has_audio_stream(ffprobe, video))
+                        .map(|ffprobe| plan_ref.probes.get(ffprobe, video).has_audio)
                         .unwrap_or(false);
                 log_state(&state_ref, format!("[{index}] 开始视频去重：{} -> {}", file_name(video), file_name(&out_file)));
                 let variant_seed = task_seed_ref ^ index.wrapping_mul(0x9E37_79B9);
-                match run_dedup_ffmpeg(plan_ref, video, &out_file, index, total, variant_seed, has_audio, &state_ref, &cancel_ref) {
-                    Ok(()) => mark_completed(&state_ref, file_name(&out_file)),
+                let staging = staging_path(&out_file);
+                let result = run_dedup_ffmpeg(plan_ref, video, &staging, index, total, variant_seed, has_audio, &state_ref, &cancel_ref)
+                    .and_then(|_| publish_output(&staging, &out_file, &cancel_ref));
+                if result.is_err() { let _ = fs::remove_file(&staging); }
+                match result {
+                    Ok(()) => mark_completed(&state_ref, index, file_name(&out_file)),
                     Err(err) => {
-                        if !output_existed_before {
-                            let _ = fs::remove_file(&out_file);
-                        }
                         if cancel_ref.load(Ordering::SeqCst) {
                             log_state(&state_ref, format!("[{index}] 已取消当前 FFmpeg：{}", file_name(video)));
                             break;
                         }
                         log_state(&state_ref, err.chars().take(3000).collect::<String>());
-                        mark_failed(&state_ref, format!("[{index}] 视频去重失败：{}", file_name(video)));
+                        mark_failed(&state_ref, index, format!("[{index}] 视频去重失败：{}", file_name(video)));
                     }
                 }
             });
@@ -1345,7 +1403,7 @@ fn run_dedup_ffmpeg(
     cmd.args(["-progress", "pipe:1", "-nostats"]);
     cmd.arg(out_file);
 
-    run_progress_cmd(cmd, plan.ffprobe.as_deref(), video, index, total, state, cancel)
+    run_progress_cmd(cmd, &plan.probes, plan.ffprobe.as_deref(), video, index, total, state, cancel)
 }
 
 fn run_overlay_task(plan: OverlayPlan, state: Arc<Mutex<RenderTaskStatus>>, cancel: Arc<AtomicBool>) {
@@ -1401,26 +1459,30 @@ fn run_overlay_task(plan: OverlayPlan, state: Arc<Mutex<RenderTaskStatus>>, canc
                 );
                 let Some(out_file) = resolve_output_path_with_strategy(&plan_ref.output.join(output_name.clone()), &plan_ref.config.conflict_strategy) else {
                     log_state(&state_ref, format!("[{index}] 输出已存在，按 skip 策略跳过：{output_name}"));
-                    mark_completed(&state_ref, format!("跳过：{output_name}"));
+                    mark_completed(&state_ref, index, format!("跳过：{output_name}"));
                     continue;
                 };
                 log_state(&state_ref, format!("[{index}] 开始背景合成：{} -> {}", file_name(video), file_name(&out_file)));
                 if plan_ref.config.keep_audio {
                     match plan_ref.ffprobe.as_deref() {
-                        Some(ffprobe) if !has_audio_stream(ffprobe, video) => log_state(&state_ref, format!("[{index}] 该视频无音频，将输出无声视频：{}", file_name(video))),
+                        Some(ffprobe) if !plan_ref.probes.get(ffprobe, video).has_audio => log_state(&state_ref, format!("[{index}] 该视频无音频，将输出无声视频：{}", file_name(video))),
                         None => log_state(&state_ref, format!("[{index}] 未找到 ffprobe，无法预检音频：{}", file_name(video))),
                         _ => {}
                     }
                 }
-                match run_overlay_ffmpeg(plan_ref, video, &out_file, index, total, &state_ref, &cancel_ref) {
-                    Ok(()) => mark_completed(&state_ref, file_name(&out_file)),
+                let staging = staging_path(&out_file);
+                let result = run_overlay_ffmpeg(plan_ref, video, &staging, index, total, &state_ref, &cancel_ref)
+                    .and_then(|_| publish_output(&staging, &out_file, &cancel_ref));
+                if result.is_err() { let _ = fs::remove_file(&staging); }
+                match result {
+                    Ok(()) => mark_completed(&state_ref, index, file_name(&out_file)),
                     Err(err) => {
                         if cancel_ref.load(Ordering::SeqCst) {
                             log_state(&state_ref, format!("[{index}] 已取消当前 FFmpeg：{}", file_name(video)));
                             break;
                         }
                         log_state(&state_ref, err.chars().take(3000).collect::<String>());
-                        mark_failed(&state_ref, format!("[{index}] 背景合成失败：{}", file_name(video)));
+                        mark_failed(&state_ref, index, format!("[{index}] 背景合成失败：{}", file_name(video)));
                     }
                 }
             });
@@ -1491,11 +1553,12 @@ fn run_overlay_ffmpeg(
     cmd.args(["-shortest", "-progress", "pipe:1", "-nostats"]);
     cmd.arg(out_file);
 
-    run_progress_cmd(cmd, plan.ffprobe.as_deref(), video, index, total, state, cancel)
+    run_progress_cmd(cmd, &plan.probes, plan.ffprobe.as_deref(), video, index, total, state, cancel)
 }
 
 fn run_progress_cmd(
-    mut cmd: Command,
+    cmd: Command,
+    probes: &crate::media::ProbeCache,
     ffprobe: Option<&Path>,
     video: &Path,
     index: u32,
@@ -1503,63 +1566,27 @@ fn run_progress_cmd(
     state: &Arc<Mutex<RenderTaskStatus>>,
     cancel: &Arc<AtomicBool>,
 ) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000);
-    }
-    let duration = ffprobe.and_then(|path| video_duration(path, video)).unwrap_or(0.0);
-    let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|err| err.to_string())?;
-    let stdout = child.stdout.take().ok_or_else(|| "无法读取 FFmpeg 进度。".to_string())?;
-    let stderr = child.stderr.take();
-    let stderr_reader = stderr.map(|stderr| thread::spawn(move || {
-        let reader = std::io::BufReader::new(stderr);
-        reader
-            .lines()
-            .map_while(Result::ok)
-            .filter(|line| !line.trim().is_empty())
-            .collect::<Vec<_>>()
-            .join("\n")
-    }));
-    let reader = std::io::BufReader::new(stdout);
-    use std::io::BufRead;
-    let mut heartbeat = 0.08_f64;
-    for line in reader.lines().map_while(Result::ok) {
-        if cancel.load(Ordering::SeqCst) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err("任务已取消。".to_string());
-        }
-        let line = line.trim().to_string();
-        if duration > 0.0 && (line.starts_with("out_time_ms=") || line.starts_with("out_time_us=")) {
+    let duration = ffprobe.map(|path| probes.get(path, video).duration).unwrap_or(0.0);
+    let output = crate::process::run(cmd, cancel, None, |line| {
+        if duration > 0.0 && line.starts_with("out_time_us=") {
             if let Some(value) = line.split('=').nth(1).and_then(|v| v.parse::<f64>().ok()) {
-                let seconds = value / 1_000_000.0;
-                let part = (seconds / duration).clamp(0.0, 1.0);
-                update_running_progress(state, index, total, part);
+                update_running_progress(state, index, total, value / 1_000_000.0 / duration);
             }
-        } else if duration <= 0.0 && line.starts_with("frame=") {
-            heartbeat = (heartbeat + 0.03).min(0.9);
-            update_running_progress(state, index, total, heartbeat);
-        } else if line == "progress=end" {
-            update_running_progress(state, index, total, 1.0);
         }
-    }
-    let status = child.wait().map_err(|err| err.to_string())?;
-    let stderr_text = stderr_reader
-        .and_then(|handle| handle.join().ok())
-        .unwrap_or_default();
-    if status.success() {
-        Ok(())
-    } else if cancel.load(Ordering::SeqCst) {
-        Err("任务已取消。".to_string())
-    } else {
-        let detail = stderr_text.trim();
-        if detail.is_empty() {
-            Err("FFmpeg 执行失败，请检查输入文件、视频编码或输出目录权限。".to_string())
-        } else {
-            Err(format!("FFmpeg 执行失败：\n{}", detail.chars().take(3000).collect::<String>()))
-        }
-    }
+    })?;
+    if output.status.success() { Ok(()) }
+    else { Err(format!("FFmpeg 执行失败：\n{}", output.stderr.chars().take(3000).collect::<String>())) }
+}
+
+fn staging_path(output: &Path) -> PathBuf {
+    let stem = output.file_stem().unwrap_or_default().to_string_lossy();
+    let extension = output.extension().unwrap_or_default().to_string_lossy();
+    output.with_file_name(format!(".{stem}.{}.partial.{extension}", next_task_id()))
+}
+
+fn publish_output(staging: &Path, output: &Path, cancel: &AtomicBool) -> Result<(), String> {
+    if cancel.load(Ordering::SeqCst) { return Err("任务已取消。".into()); }
+    fs::rename(staging, output).map_err(|error| format!("无法保存输出文件：{error}"))
 }
 
 fn ensure_output_writable(output: &Path) -> Result<(), String> {
@@ -1571,11 +1598,6 @@ fn ensure_output_writable(output: &Path) -> Result<(), String> {
 
 fn even_dimension(value: u32) -> u32 {
     if value % 2 == 0 { value } else { value + 1 }
-}
-
-fn video_duration(ffprobe: &Path, video: &Path) -> Option<f64> {
-    let text = command_text(ffprobe, &["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", video.to_str()?]).ok()?;
-    text.trim().parse::<f64>().ok()
 }
 
 fn run_render_task(plan: RenderPlan, state: Arc<Mutex<RenderTaskStatus>>, cancel: Arc<AtomicBool>) {
@@ -1602,7 +1624,7 @@ fn run_render_task(plan: RenderPlan, state: Arc<Mutex<RenderTaskStatus>>, cancel
         let output_name = output_name(&plan.config, index);
         let Some(output_path) = resolve_output_path_with_strategy(&plan.output.join(&output_name), &plan.config.conflict_strategy) else {
             log_state(&state, format!("[{index}] 输出已存在，按 skip 策略跳过：{output_name}"));
-            mark_completed(&state, format!("跳过：{output_name}"));
+            mark_completed(&state, index, format!("跳过：{output_name}"));
             continue;
         };
         let actual_output_name = output_path
@@ -1613,7 +1635,7 @@ fn run_render_task(plan: RenderPlan, state: Arc<Mutex<RenderTaskStatus>>, cancel
         let job_dir = temp_root.join(format!("{:04}_{}", index, unix_millis()));
 
         if let Err(err) = fs::create_dir_all(&job_dir) {
-            mark_failed(&state, format!("[{index}] 临时目录创建失败：{err}"));
+            mark_failed(&state, index, format!("[{index}] 临时目录创建失败：{err}"));
             continue;
         }
         batch.push(RenderJob {
@@ -1663,20 +1685,17 @@ fn run_job_batch(
     cancel: &Arc<AtomicBool>,
     jobs: Vec<RenderJob>,
 ) {
-    let mut handles = Vec::new();
-    for job in jobs {
-        let plan = plan.clone();
-        let state = state.clone();
-        let cancel = cancel.clone();
-        handles.push(thread::spawn(move || process_render_job(plan, job, state, cancel)));
-    }
-    for handle in handles {
-        let _ = handle.join();
-    }
+    thread::scope(|scope| {
+        for job in jobs {
+            let state = state.clone();
+            let cancel = cancel.clone();
+            scope.spawn(move || process_render_job(plan, job, state, cancel));
+        }
+    });
 }
 
 fn process_render_job(
-    plan: RenderPlan,
+    plan: &RenderPlan,
     job: RenderJob,
     state: Arc<Mutex<RenderTaskStatus>>,
     cancel: Arc<AtomicBool>,
@@ -1710,7 +1729,8 @@ fn process_render_job(
         }
     }
 
-    let keep_audio = should_keep_audio(&plan.ffprobe, &effective_sequence, &state, job.index, plan.config.keep_audio);
+    let keep_audio = should_keep_audio(&plan.probes, &plan.ffprobe, &effective_sequence, &state, job.index, plan.config.keep_audio);
+    let staged_output = job.job_dir.join("result.mp4");
     let mut part_paths = Vec::new();
     let mut ok = true;
 
@@ -1721,7 +1741,7 @@ fn process_render_job(
         }
         let part_path = job.job_dir.join(format!("part_{:03}.mp4", part_index + 1));
         let cmd = build_preprocess_cmd(&plan.ffmpeg, src, &part_path, &plan.config, &variant, keep_audio, job.encoder);
-        match run_cmd(cmd) {
+        match run_cmd(cmd, &cancel) {
             Ok(()) => part_paths.push(part_path),
             Err(err) => {
                 ok = false;
@@ -1733,29 +1753,32 @@ fn process_render_job(
     }
 
     if ok && !part_paths.is_empty() {
-        let concat_output = if plan.banner.is_some() { job.job_dir.join("merged_before_banner.mp4") } else { job.output_path.clone() };
-        match concat_parts(&plan.ffmpeg, &part_paths, &concat_output, &job.job_dir) {
+        let concat_output = if plan.banner.is_some() { job.job_dir.join("merged_before_banner.mp4") } else { staged_output.clone() };
+        match concat_parts(&plan.ffmpeg, &part_paths, &concat_output, &job.job_dir, &cancel) {
             Ok(()) => {
                 if let Some(banner) = plan.banner.as_ref() {
-                    if let Err(err) = apply_banner_overlay(&plan.ffmpeg, &concat_output, banner, &job.output_path, keep_audio, job.encoder) {
+                    if let Err(err) = apply_banner_overlay(&plan.ffmpeg, &concat_output, banner, &staged_output, keep_audio, job.encoder, &cancel) {
                         log_state(&state, format!("[{}] 底栏视频覆盖失败：{}", job.index, job.actual_output_name));
                         log_state(&state, err.chars().take(3000).collect::<String>());
-                        mark_failed(&state, String::new());
+                        mark_failed(&state, job.index, String::new());
                         ok = false;
                     }
                 }
                 if ok {
-                    mark_completed(&state, job.actual_output_name.clone());
+                    match publish_output(&staged_output, &job.output_path, &cancel) {
+                        Ok(()) => mark_completed(&state, job.index, job.actual_output_name.clone()),
+                        Err(error) => if !cancel.load(Ordering::SeqCst) { mark_failed(&state, job.index, error); },
+                    }
                 }
             }
             Err(err) => {
                 log_state(&state, format!("[{}] 拼接失败：{}", job.index, job.actual_output_name));
                 log_state(&state, err.chars().take(3000).collect::<String>());
-                mark_failed(&state, String::new());
+                mark_failed(&state, job.index, String::new());
             }
         }
     } else if !cancel.load(Ordering::SeqCst) {
-        mark_failed(&state, String::new());
+        mark_failed(&state, job.index, String::new());
     }
 
     if plan.config.cleanup_temp {
@@ -1800,7 +1823,7 @@ fn build_preprocess_cmd(ffmpeg: &Path, src: &Path, dst: &Path, config: &RenderCo
     cmd
 }
 
-fn concat_parts(ffmpeg: &Path, part_paths: &[PathBuf], output_path: &Path, job_dir: &Path) -> Result<(), String> {
+fn concat_parts(ffmpeg: &Path, part_paths: &[PathBuf], output_path: &Path, job_dir: &Path, cancel: &AtomicBool) -> Result<(), String> {
     let list_path = job_dir.join("concat_list.txt");
     let lines = part_paths
         .iter()
@@ -1814,10 +1837,10 @@ fn concat_parts(ffmpeg: &Path, part_paths: &[PathBuf], output_path: &Path, job_d
     cmd.arg("-i").arg(&list_path);
     cmd.args(["-c", "copy", "-movflags", "+faststart"]);
     cmd.arg(output_path);
-    run_cmd(cmd)
+    run_cmd(cmd, cancel)
 }
 
-fn apply_banner_overlay(ffmpeg: &Path, src: &Path, banner: &Path, dst: &Path, keep_audio: bool, encoder: EncoderKind) -> Result<(), String> {
+fn apply_banner_overlay(ffmpeg: &Path, src: &Path, banner: &Path, dst: &Path, keep_audio: bool, encoder: EncoderKind, cancel: &AtomicBool) -> Result<(), String> {
     let filter_complex = "[1:v]scale=1080:-2,setpts=PTS-STARTPTS[bar];[0:v][bar]overlay=(main_w-overlay_w)/2:main_h-overlay_h:format=auto:shortest=0[v]";
     let mut cmd = Command::new(ffmpeg);
     cmd.args(["-hide_banner", "-loglevel", "error", "-y"]);
@@ -1838,25 +1861,13 @@ fn apply_banner_overlay(ffmpeg: &Path, src: &Path, banner: &Path, dst: &Path, ke
     }
     cmd.args(["-shortest", "-movflags", "+faststart"]);
     cmd.arg(dst);
-    run_cmd(cmd)
+    run_cmd(cmd, cancel)
 }
 
-fn run_cmd(mut cmd: Command) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000);
-    }
-    let output = cmd.output().map_err(|err| err.to_string())?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        let mut text = String::from_utf8_lossy(&output.stderr).to_string();
-        if text.trim().is_empty() {
-            text = String::from_utf8_lossy(&output.stdout).to_string();
-        }
-        Err(text.trim().to_string())
-    }
+fn run_cmd(cmd: Command, cancel: &AtomicBool) -> Result<(), String> {
+    let output = crate::process::run(cmd, cancel, None, |_| {})?;
+    if output.status.success() { Ok(()) }
+    else { Err(output.stderr.trim().to_owned()) }
 }
 
 fn append_overlay_encoder_args(cmd: &mut Command, encoder: EncoderKind, preset: &str, crf: u8) {
@@ -2056,16 +2067,9 @@ fn validate_encoder(ffmpeg: &Path, mode: &str) -> Result<(), String> {
 fn command_text(path: &Path, args: &[&str]) -> Result<String, String> {
     let mut cmd = Command::new(path);
     cmd.args(args);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000);
-    }
-    let output = cmd.output().map_err(|err| err.to_string())?;
-    let mut text = String::new();
-    text.push_str(&String::from_utf8_lossy(&output.stdout));
-    text.push_str(&String::from_utf8_lossy(&output.stderr));
-    Ok(text)
+    let output = crate::process::run(cmd, &AtomicBool::new(false), Some(std::time::Duration::from_secs(10)), |_| {})?;
+    if !output.status.success() { return Err(output.stderr); }
+    Ok(output.stdout + &output.stderr)
 }
 
 fn encoder_for_job(mode: &str, index: u32) -> EncoderKind {
@@ -2353,8 +2357,8 @@ fn same_path(left: &Path, right: &Path) -> bool {
     left == right
 }
 
-fn find_binary(app: &tauri::AppHandle, name: &str, source: &Path) -> Option<PathBuf> {
-    let mut candidates = vec![source.join(name)];
+fn find_binary(app: &tauri::AppHandle, name: &str, _source: &Path) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
     if let Ok(resource_dir) = app.path().resource_dir() {
         candidates.push(resource_dir.join("bin").join(name));
         candidates.push(resource_dir.join(name));
@@ -2369,6 +2373,7 @@ fn find_binary(app: &tauri::AppHandle, name: &str, source: &Path) -> Option<Path
 }
 
 fn should_keep_audio(
+    probes: &crate::media::ProbeCache,
     ffprobe: &Option<PathBuf>,
     sequence: &[PathBuf],
     state: &Arc<Mutex<RenderTaskStatus>>,
@@ -2384,7 +2389,7 @@ fn should_keep_audio(
     };
     let missing = sequence
         .iter()
-        .filter(|path| !has_audio_stream(ffprobe, path))
+        .filter(|path| !probes.get(ffprobe, path).has_audio)
         .map(|path| file_name(path))
         .collect::<Vec<_>>();
     if missing.is_empty() {
@@ -2395,29 +2400,6 @@ fn should_keep_audio(
         log_state(state, format!("[{index}] 未检测到音频：{}", missing.into_iter().take(8).collect::<Vec<_>>().join("、")));
         false
     }
-}
-
-fn has_audio_stream(ffprobe: &Path, video: &Path) -> bool {
-    let mut cmd = Command::new(ffprobe);
-    cmd.args([
-        "-v",
-        "error",
-        "-select_streams",
-        "a:0",
-        "-show_entries",
-        "stream=index",
-        "-of",
-        "csv=p=0",
-    ]);
-    cmd.arg(video);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000);
-    }
-    cmd.output()
-        .map(|output| output.status.success() && !String::from_utf8_lossy(&output.stdout).trim().is_empty())
-        .unwrap_or(false)
 }
 
 fn which_on_path(name: &str) -> Option<PathBuf> {
@@ -2488,16 +2470,18 @@ fn unix_millis() -> u128 {
         .unwrap_or(0)
 }
 
-fn mark_completed(state: &Arc<Mutex<RenderTaskStatus>>, output_name: String) {
+fn mark_completed(state: &Arc<Mutex<RenderTaskStatus>>, index: u32, output_name: String) {
     if let Ok(mut status) = state.lock() {
+        status.in_flight.remove(&index);
         status.completed = status.completed.saturating_add(1);
         push_log(&mut status, format!("完成：{output_name}"));
         update_progress(&mut status);
     }
 }
 
-fn mark_failed(state: &Arc<Mutex<RenderTaskStatus>>, message: String) {
+fn mark_failed(state: &Arc<Mutex<RenderTaskStatus>>, index: u32, message: String) {
     if let Ok(mut status) = state.lock() {
+        status.in_flight.remove(&index);
         status.failed = status.failed.saturating_add(1);
         if !message.is_empty() {
             push_log(&mut status, message);
@@ -2518,13 +2502,15 @@ fn update_progress(status: &mut RenderTaskStatus) {
         return;
     }
     let done = status.completed.saturating_add(status.failed).min(status.total);
-    status.progress = ((done as f64 / status.total as f64) * 100.0).round() as u8;
+    let partial: f64 = status.in_flight.values().sum();
+    let value = (((done as f64 + partial) / status.total as f64) * 100.0).floor() as u8;
+    status.progress = if done >= status.total { 100 } else { value.min(99) };
 }
 
-fn update_running_progress(state: &Arc<Mutex<RenderTaskStatus>>, index: u32, total: u32, part: f64) {
+fn update_running_progress(state: &Arc<Mutex<RenderTaskStatus>>, index: u32, _total: u32, part: f64) {
     if let Ok(mut status) = state.lock() {
-        let overall = ((index.saturating_sub(1) as f64 + part.clamp(0.0, 1.0)) / total.max(1) as f64 * 100.0).round() as u8;
-        status.progress = overall.min(99);
+        status.in_flight.entry(index).and_modify(|value| *value = value.max(part.clamp(0.0, 1.0))).or_insert(part.clamp(0.0, 1.0));
+        update_progress(&mut status);
     }
 }
 

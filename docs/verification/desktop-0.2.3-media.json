@@ -1,0 +1,33 @@
+{
+  "failed_overwrite_preserved": true,
+  "ffmpeg_cancel_ms": 316,
+  "outputs": [
+    {
+      "duration": 1.023991,
+      "file": "C:\\Users\\sanqi\\Desktop\\项目文件夹\\video_mix_membership_re_removed_clean_full_pack\\video_mix_membership_re_removed_clean_full_pack\\desktop\\src-tauri\\target\\desktop-smoke-task-1791619734207-8\\dedup\\素材 sample.mp4",
+      "has_audio": true
+    },
+    {
+      "duration": 1.0,
+      "file": "C:\\Users\\sanqi\\Desktop\\项目文件夹\\video_mix_membership_re_removed_clean_full_pack\\video_mix_membership_re_removed_clean_full_pack\\desktop\\src-tauri\\target\\desktop-smoke-task-1791619734207-8\\watermark\\素材 sample.mp4",
+      "has_audio": true
+    },
+    {
+      "duration": 1.020998,
+      "file": "C:\\Users\\sanqi\\Desktop\\项目文件夹\\video_mix_membership_re_removed_clean_full_pack\\video_mix_membership_re_removed_clean_full_pack\\desktop\\src-tauri\\target\\desktop-smoke-task-1791619734207-8\\overlay\\overlay_0001.mp4",
+      "has_audio": true
+    },
+    {
+      "duration": 1.044898,
+      "file": "C:\\Users\\sanqi\\Desktop\\项目文件夹\\video_mix_membership_re_removed_clean_full_pack\\video_mix_membership_re_removed_clean_full_pack\\desktop\\src-tauri\\target\\desktop-smoke-task-1791619734207-8\\mix\\mix_0001.mp4",
+      "has_audio": true
+    },
+    {
+      "duration": 1.044898,
+      "file": "C:\\Users\\sanqi\\Desktop\\项目文件夹\\video_mix_membership_re_removed_clean_full_pack\\video_mix_membership_re_removed_clean_full_pack\\desktop\\src-tauri\\target\\desktop-smoke-task-1791619734207-8\\mix\\mix_0002.mp4",
+      "has_audio": true
+    }
+  ],
+  "shared_clip_probe_calls": 1,
+  "version": "0.2.3"
+}

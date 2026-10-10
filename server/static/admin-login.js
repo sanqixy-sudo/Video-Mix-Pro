@@ -20,7 +20,10 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       });
-      if (!response.ok) throw new Error(await response.text() || "登录失败");
+      if (!response.ok) {
+        const payload = await response.json();
+        throw new Error(typeof payload.detail === "string" ? payload.detail : "登录失败，请重试");
+      }
       window.location.reload();
     } catch (error) {
       message.textContent = error instanceof Error ? error.message : "登录失败";
