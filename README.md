@@ -5,7 +5,7 @@
   <p>批量混剪 · 画面叠加 · 动态水印 · 渲染队列 · 设备绑定 · 在线更新</p>
 
   <p>
-    <img src="https://img.shields.io/badge/客户端-0.2.3-5E6AD2?style=flat-square" alt="Client 0.2.3">
+    <img src="https://img.shields.io/badge/客户端-0.2.4-5E6AD2?style=flat-square" alt="Client 0.2.4">
     <img src="https://img.shields.io/badge/运营后台-0.3.0-1EA672?style=flat-square" alt="Web 0.3.0">
     <img src="https://img.shields.io/badge/平台-Windows_x64-1473E6?style=flat-square" alt="Windows x64">
     <img src="https://img.shields.io/badge/Tauri-2.x-24C8DB?style=flat-square" alt="Tauri 2">
@@ -23,11 +23,11 @@ Video Mix Pro 将本地高性能视频处理客户端与可独立部署的会员
 
 ## 下载与本次更新
 
-- [Windows 安装包 0.2.3](https://github.com/sanqixy-sudo/Video-Mix-Pro/releases/download/v0.2.3/VideoMixPro_0.2.3_Setup.exe)
-- [解压即用便携版 0.2.3](https://github.com/sanqixy-sudo/Video-Mix-Pro/releases/download/v0.2.3/VideoMixPro_0.2.3_Portable.zip)：包含 FFmpeg、FFprobe 和固定版 WebView2，完整解压后运行。
-- [SHA-256 校验文件](https://github.com/sanqixy-sudo/Video-Mix-Pro/releases/download/v0.2.3/VideoMixPro_0.2.3_SHA256.txt)
+- [Windows 安装包 0.2.4](https://github.com/sanqixy-sudo/Video-Mix-Pro/releases/download/v0.2.4/VideoMixPro_0.2.4_Setup.exe)
+- [SHA-256 校验文件](https://github.com/sanqixy-sudo/Video-Mix-Pro/releases/download/v0.2.4/SHA256.txt)
+- [解压即用便携版 0.2.3（旧版）](https://github.com/sanqixy-sudo/Video-Mix-Pro/releases/download/v0.2.3/VideoMixPro_0.2.3_Portable.zip)：包含 FFmpeg、FFprobe 和固定版 WebView2，完整解压后运行。
 
-客户端 0.2.3 补上原生会员验证、任务取消与失败输出保护，复用媒体探测和硬件检测结果，修正并发进度与过时请求，非首屏页面按需加载。每次新任务和队列调度均需联网验证，已开始的当前批次允许完成。详见 [客户端验收记录](docs/verification/desktop-0.2.3.md)。
+客户端 0.2.4 为批量混剪和背景图视频合成增加横竖屏输出选择，避免横屏素材被强制拉伸为竖屏。详见 [更新日志](CHANGELOG.md)。
 
 Web 0.3.0 提供新的浅色管理后台、完整分页与用户详情、续费预览与重试去重、持久兑换批次和准确导出，并重建官网。Docker 源码在 `server/`，版本发布说明见 [Web 0.3.0](https://github.com/sanqixy-sudo/Video-Mix-Pro/releases/tag/web-v0.3.0)。
 
@@ -162,7 +162,7 @@ Video-Mix-Pro/
 
 ## 当前版本
 
-- Windows 客户端：`0.2.1`
+- Windows 客户端：`0.2.4`
 - Docker 官网与运营后台：`0.2.3`
 - 设备换绑冷却：默认 `6` 小时
 
