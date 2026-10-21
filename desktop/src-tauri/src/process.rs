@@ -7,6 +7,78 @@ use std::sync::mpsc::{sync_channel, SyncSender};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[cfg(windows)]
+mod child_job {
+    use std::ffi::c_void;
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use std::process::Child;
+    use std::sync::OnceLock;
+    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
+        JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+
+    static JOB: OnceLock<Result<OwnedHandle, String>> = OnceLock::new();
+
+    fn create() -> Result<OwnedHandle, String> {
+        let raw = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if raw.is_null() {
+            return Err(format!("无法创建子进程管理对象：{}", std::io::Error::last_os_error()));
+        }
+        let job = unsafe { OwnedHandle::from_raw_handle(raw) };
+        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let configured = unsafe {
+            SetInformationJobObject(
+                job.as_raw_handle() as HANDLE,
+                JobObjectExtendedLimitInformation,
+                &limits as *const _ as *const c_void,
+                std::mem::size_of_val(&limits) as u32,
+            )
+        };
+        if configured == 0 {
+            return Err(format!("无法设置子进程退出规则：{}", std::io::Error::last_os_error()));
+        }
+        Ok(job)
+    }
+
+    pub fn attach(child: &Child) -> Result<(), String> {
+        let job = JOB.get_or_init(create).as_ref().map_err(Clone::clone)?;
+        let attached = unsafe { AssignProcessToJobObject(job.as_raw_handle() as HANDLE, child.as_raw_handle() as HANDLE) };
+        if attached == 0 {
+            return Err(format!("无法管理子进程 {}：{}", child.id(), std::io::Error::last_os_error()));
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn test_job_kills_child_when_closed() {
+        use std::os::windows::process::CommandExt;
+        use std::process::Command;
+        let job = create().unwrap();
+        let mut command = Command::new("powershell.exe");
+        command.args(["-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 20"]);
+        command.creation_flags(0x08000000);
+        let mut child = command.spawn().unwrap();
+        let attached = unsafe { AssignProcessToJobObject(job.as_raw_handle() as HANDLE, child.as_raw_handle() as HANDLE) };
+        if attached == 0 {
+            let error = std::io::Error::last_os_error();
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("test child could not join job: {error}");
+        }
+        drop(job);
+        let started = std::time::Instant::now();
+        loop {
+            if child.try_wait().unwrap().is_some() { break; }
+            assert!(started.elapsed() < std::time::Duration::from_secs(3), "child survived closing its job");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+}
+
 const OUTPUT_LIMIT: usize = 256 * 1024;
 const ERROR_LIMIT: usize = 64 * 1024;
 
@@ -51,6 +123,11 @@ pub fn run(
     }
     let mut child = command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped())
         .spawn().map_err(|err| format!("无法启动处理程序：{err}"))?;
+    crate::diagnostic_log::event(&format!("subprocess {} started", child.id()));
+    #[cfg(windows)]
+    if let Err(error) = child_job::attach(&child) {
+        crate::diagnostic_log::event(&error);
+    }
     let (sender, receiver) = sync_channel(64);
     let stdout = child.stdout.take().ok_or("无法读取处理程序输出。")?;
     let stderr = child.stderr.take().ok_or("无法读取处理程序错误输出。")?;
@@ -97,6 +174,7 @@ pub fn run(
     };
     let stdout = out_reader.join().unwrap_or_default();
     let stderr = err_reader.join().unwrap_or_default();
+    crate::diagnostic_log::event(&format!("subprocess {} ended, exit_code={:?}", child.id(), status.as_ref().ok().and_then(|value| value.code())));
     for line in receiver.try_iter() { progress(&line); }
     if let Some(error) = failure { return Err(error); }
     Ok(Output { status: status?, stdout, stderr })
@@ -134,5 +212,10 @@ mod tests {
         let start = Instant::now();
         assert!(run(command, &AtomicBool::new(false), Some(Duration::from_millis(250)), |_| {}).err().unwrap().contains("超时"));
         assert!(start.elapsed() < Duration::from_secs(3));
+    }
+    #[test]
+    #[cfg(windows)]
+    fn subprocess_job_closes_with_parent() {
+        child_job::test_job_kills_child_when_closed();
     }
 }

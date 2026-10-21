@@ -12,6 +12,11 @@ pub fn run() {
             .or_else(|| dirs::data_local_dir().map(|data| data.join("VideoMixPro").join("logs"))),
     );
     tauri::Builder::default()
+        .on_window_event(|_, event| match event {
+            tauri::WindowEvent::CloseRequested { .. } => diagnostic_log::event("window close requested"),
+            tauri::WindowEvent::Destroyed => diagnostic_log::event("window destroyed"),
+            _ => {}
+        })
         .manage(commands::render::RenderState::default())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())

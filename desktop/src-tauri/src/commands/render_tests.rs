@@ -121,7 +121,8 @@ fn real_media_workflows_cache_failure_and_cancel() {
     let landscape_state=Arc::new(Mutex::new(initial_overlay_status(&landscape_overlay,"overlay-landscape")));
     run_overlay_task(landscape_overlay,landscape_state.clone(),cancel.clone());assert_completed(&landscape_state);
 
-    let config=serde_json::json!({"sourceFolder":"","outputFolder":"","segmentCount":1,"outputCount":2,"trimStartSeconds":0.0,"enableFirstVideo":false,"firstVideoFolder":"","enableTopInsert":false,"enableTailVideo":false,"tailVideoFolder":"","enableBannerOverlay":false,"bannerFile":"","allowRepeatInsideOneVideo":false,"enableDedupWhenComboRepeated":false,"keepAudio":true,"cleanupTemp":true,"encoder":"cpu_libx264","workers":2,"concurrencyMode":"manual","enableAutoNaming":false,"namingUseSourceName":false,"namingDate":"","namingPart1":"","namingPart2":"","namingPart3":"","namingPart4":"","namingSeqDigits":4,"conflictStrategy":"overwrite"});
+    // Exercise multiple sequential outputs and repeated FFmpeg launches; the reported crash happened after the first output.
+    let config=serde_json::json!({"sourceFolder":"","outputFolder":"","segmentCount":3,"outputCount":6,"trimStartSeconds":0.0,"enableFirstVideo":false,"firstVideoFolder":"","enableTopInsert":false,"enableTailVideo":false,"tailVideoFolder":"","enableBannerOverlay":false,"bannerFile":"","allowRepeatInsideOneVideo":true,"enableDedupWhenComboRepeated":false,"keepAudio":true,"cleanupTemp":true,"encoder":"cpu_libx264","workers":1,"concurrencyMode":"manual","enableAutoNaming":false,"namingUseSourceName":false,"namingDate":"","namingPart1":"","namingPart2":"","namingPart3":"","namingPart4":"","namingSeqDigits":4,"conflictStrategy":"overwrite"});
     let out=dir.join("mix");fs::create_dir_all(&out).unwrap();
     let plan=RenderPlan { config:serde_json::from_value(config).unwrap(),source:dir.clone(),output:out,ffmpeg:ffmpeg.clone(),ffprobe:Some(ffprobe.clone()),videos:vec![video.clone()],first_videos:vec![],top_videos:vec![],tail_videos:vec![],banner:None,probes:Arc::default() };
     let probes=plan.probes.clone();
@@ -162,7 +163,7 @@ fn real_media_workflows_cache_failure_and_cancel() {
             outputs.push(serde_json::json!({"file":path,"duration":info.duration,"has_audio":info.has_audio}));
         }
     }
-    assert_eq!(outputs.len(),7);
+    assert_eq!(outputs.len(),11);
     let report=serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"outputs":outputs,"ffmpeg_cancel_ms":cancel_ms,"shared_clip_probe_calls":probes.calls.load(Ordering::SeqCst),"failed_overwrite_preserved":true});
     fs::write(dir.join("report.json"),serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     println!("MEDIA_REPORT={}",dir.join("report.json").display());

@@ -1,6 +1,6 @@
 [package]
 name = "video-mix-pro"
-version = "0.2.5"
+version = "0.2.6"
 description = "Video Mix Pro Windows desktop client"
 authors = ["Video Mix Pro"]
 edition = "2021"
@@ -26,3 +26,6 @@ tauri-plugin-dialog = "2.2.0"
 dirs = "5.0"
 reqwest = { version = "=0.13.4", default-features = false, features = ["blocking", "json", "rustls", "system-proxy"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }

@@ -1654,7 +1654,14 @@ fn run_render_task(plan: RenderPlan, state: Arc<Mutex<RenderTaskStatus>>, cancel
     );
     log_state(&state, format!("理论不重复组合数：{}。", max_unique));
     let workers = worker_count(&plan);
-    crate::diagnostic_log::event(&format!("mix workers={workers}, outputs={}, segments={}", plan.config.output_count, plan.config.segment_count));
+    crate::diagnostic_log::event(&format!(
+        "mix workers={workers}, outputs={}, segments={}, encoder={}, concurrency={}, available_memory_mib={:?}",
+        plan.config.output_count,
+        plan.config.segment_count,
+        plan.config.encoder,
+        plan.config.concurrency_mode,
+        available_memory_bytes().map(|bytes| bytes / (1024 * 1024)),
+    ));
     let mut batch = Vec::new();
     for index in 1..=plan.config.output_count {
         if cancel.load(Ordering::SeqCst) {
@@ -1755,6 +1762,12 @@ fn process_render_job(
         Variant::normal()
     };
     let (effective_sequence, first_pick, top_picks, tail_pick) = build_effective_sequence(&plan, &job.combo, job.index);
+    crate::diagnostic_log::event(&format!(
+        "mix job {} started, parts={}, encoder={}",
+        job.index,
+        effective_sequence.len(),
+        job.encoder.label(),
+    ));
     log_state(&state, format!("[{}] 开始：主组合：{}；编码器：{}", job.index, combo_names(&job.combo), job.encoder.label()));
     if let Some(path) = first_pick.as_ref() {
         log_state(&state, format!("[{}] 首视频：{}", job.index, file_name(path)));
@@ -1785,9 +1798,14 @@ fn process_render_job(
         }
         let part_path = job.job_dir.join(format!("part_{:03}.mp4", part_index + 1));
         let cmd = build_preprocess_cmd(&plan.ffmpeg, src, &part_path, &plan.config, &variant, keep_audio, job.encoder);
+        crate::diagnostic_log::event(&format!("mix job {} part {} started", job.index, part_index + 1));
         match run_cmd(cmd, &cancel) {
-            Ok(()) => part_paths.push(part_path),
+            Ok(()) => {
+                crate::diagnostic_log::event(&format!("mix job {} part {} completed", job.index, part_index + 1));
+                part_paths.push(part_path);
+            }
             Err(err) => {
+                crate::diagnostic_log::event(&format!("mix job {} part {} failed", job.index, part_index + 1));
                 ok = false;
                 log_state(&state, format!("[{}] 处理素材失败：{}", job.index, file_name(src)));
                 log_state(&state, err.chars().take(3000).collect::<String>());
@@ -1798,10 +1816,14 @@ fn process_render_job(
 
     if ok && !part_paths.is_empty() {
         let concat_output = if plan.banner.is_some() { job.job_dir.join("merged_before_banner.mp4") } else { staged_output.clone() };
+        crate::diagnostic_log::event(&format!("mix job {} concat started", job.index));
         match concat_parts(&plan.ffmpeg, &part_paths, &concat_output, &job.job_dir, &cancel) {
             Ok(()) => {
+                crate::diagnostic_log::event(&format!("mix job {} concat completed", job.index));
                 if let Some(banner) = plan.banner.as_ref() {
+                    crate::diagnostic_log::event(&format!("mix job {} banner started", job.index));
                     if let Err(err) = apply_banner_overlay(&plan.ffmpeg, &concat_output, banner, &staged_output, keep_audio, job.encoder, plan.config.orientation.dimensions().0, &cancel) {
+                        crate::diagnostic_log::event(&format!("mix job {} banner failed", job.index));
                         log_state(&state, format!("[{}] 底栏视频覆盖失败：{}", job.index, job.actual_output_name));
                         log_state(&state, err.chars().take(3000).collect::<String>());
                         mark_failed(&state, job.index, String::new());
@@ -1810,12 +1832,19 @@ fn process_render_job(
                 }
                 if ok {
                     match publish_output(&staged_output, &job.output_path, &cancel) {
-                        Ok(()) => mark_completed(&state, job.index, job.actual_output_name.clone()),
-                        Err(error) => if !cancel.load(Ordering::SeqCst) { mark_failed(&state, job.index, error); },
+                        Ok(()) => {
+                            crate::diagnostic_log::event(&format!("mix job {} published", job.index));
+                            mark_completed(&state, job.index, job.actual_output_name.clone());
+                        }
+                        Err(error) => if !cancel.load(Ordering::SeqCst) {
+                            crate::diagnostic_log::event(&format!("mix job {} publish failed", job.index));
+                            mark_failed(&state, job.index, error);
+                        },
                     }
                 }
             }
             Err(err) => {
+                crate::diagnostic_log::event(&format!("mix job {} concat failed", job.index));
                 log_state(&state, format!("[{}] 拼接失败：{}", job.index, job.actual_output_name));
                 log_state(&state, err.chars().take(3000).collect::<String>());
                 mark_failed(&state, job.index, String::new());
@@ -1828,6 +1857,11 @@ fn process_render_job(
     if plan.config.cleanup_temp {
         let _ = fs::remove_dir_all(&job.job_dir);
     }
+    crate::diagnostic_log::event(&format!(
+        "mix job {} ended, available_memory_mib={:?}",
+        job.index,
+        available_memory_bytes().map(|bytes| bytes / (1024 * 1024)),
+    ));
 }
 
 fn build_preprocess_cmd(ffmpeg: &Path, src: &Path, dst: &Path, config: &RenderConfig, variant: &Variant, keep_audio: bool, encoder: EncoderKind) -> Command {
