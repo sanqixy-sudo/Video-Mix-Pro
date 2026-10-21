@@ -2,10 +2,15 @@ mod commands;
 mod portable;
 mod process;
 mod media;
+mod diagnostic_log;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     portable::prepare();
+    diagnostic_log::init(
+        portable::data_dir().map(|data| data.join("logs"))
+            .or_else(|| dirs::data_local_dir().map(|data| data.join("VideoMixPro").join("logs"))),
+    );
     tauri::Builder::default()
         .manage(commands::render::RenderState::default())
         .plugin(tauri_plugin_shell::init())
@@ -33,4 +38,5 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Video Mix Pro");
+    diagnostic_log::event("application exited normally");
 }

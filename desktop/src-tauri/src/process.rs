@@ -52,10 +52,25 @@ pub fn run(
     let mut child = command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped())
         .spawn().map_err(|err| format!("无法启动处理程序：{err}"))?;
     let (sender, receiver) = sync_channel(64);
-    let stdout = child.stdout.take().expect("piped stdout");
-    let stderr = child.stderr.take().expect("piped stderr");
-    let out_reader = thread::spawn(move || capture(stdout, OUTPUT_LIMIT, Some(sender)));
-    let err_reader = thread::spawn(move || capture(stderr, ERROR_LIMIT, None));
+    let stdout = child.stdout.take().ok_or("无法读取处理程序输出。")?;
+    let stderr = child.stderr.take().ok_or("无法读取处理程序错误输出。")?;
+    let out_reader = thread::Builder::new().name("ffmpeg-stdout".into())
+        .spawn(move || capture(stdout, OUTPUT_LIMIT, Some(sender)))
+        .map_err(|err| {
+            let _ = child.kill();
+            let _ = child.wait();
+            format!("无法创建处理程序输出读取线程：{err}")
+        })?;
+    let err_reader = match thread::Builder::new().name("ffmpeg-stderr".into())
+        .spawn(move || capture(stderr, ERROR_LIMIT, None)) {
+        Ok(reader) => reader,
+        Err(err) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = out_reader.join();
+            return Err(format!("无法创建处理程序错误读取线程：{err}"));
+        }
+    };
     let started = Instant::now();
     let mut failure = None;
     let status = loop {

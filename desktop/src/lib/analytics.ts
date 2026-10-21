@@ -95,8 +95,10 @@ export function recordQueueOutcomes(queue: QueueTaskStatus[]): void {
 
 export function resetUxMetrics(): void {
   const metrics = defaultMetrics();
-  localStorage.setItem(METRICS_KEY, JSON.stringify(metrics));
-  notifyMetrics();
+  try {
+    localStorage.setItem(METRICS_KEY, JSON.stringify(metrics));
+    notifyMetrics();
+  } catch { /* Usage metrics must not interrupt video processing. */ }
 }
 
 export function onUxMetricsChange(listener: () => void): () => void {
@@ -105,11 +107,13 @@ export function onUxMetricsChange(listener: () => void): () => void {
 }
 
 function updateMetrics(updater: (metrics: UxMetrics) => UxMetrics, notify = true): void {
-  const current = getUxMetrics();
-  const next = updater(current);
-  if (JSON.stringify(next) === JSON.stringify(current)) return;
-  localStorage.setItem(METRICS_KEY, JSON.stringify(next));
-  if (notify) notifyMetrics();
+  try {
+    const current = getUxMetrics();
+    const next = updater(current);
+    if (JSON.stringify(next) === JSON.stringify(current)) return;
+    localStorage.setItem(METRICS_KEY, JSON.stringify(next));
+    if (notify) notifyMetrics();
+  } catch { /* Usage metrics must not interrupt video processing. */ }
 }
 
 function notifyMetrics(): void {

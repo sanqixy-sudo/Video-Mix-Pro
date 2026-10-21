@@ -394,8 +394,11 @@ pub async fn start_render_task(
 ) -> Result<RenderTaskStatus, String> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        crate::diagnostic_log::event("mix submission requested");
         let authorization = super::auth::require_membership()?;
+        crate::diagnostic_log::event("mix membership verified");
         let plan = validate_plan(&app, config)?;
+        crate::diagnostic_log::event("mix plan validated");
         let task = queued_render_task(plan);
         enqueue_task(&state, task, authorization)
     }).await.map_err(|_| "提交任务失败".to_owned())?
@@ -726,27 +729,41 @@ fn run_queue_loop(state: RenderState) {
         }
         set_queue_item_running(&state.queue_items, &task.id);
 
-        let authorization = task.authorization.as_ref()
-            .ok_or_else(|| "任务缺少有效授权".to_owned())
-            .and_then(super::auth::revalidate_membership);
-        if let Err(error) = authorization {
+        crate::diagnostic_log::event(&format!("task {} started ({})", task.id, task.item.task_kind));
+
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let authorization = task.authorization.as_ref()
+                .ok_or_else(|| "任务缺少有效授权".to_owned())
+                .and_then(super::auth::revalidate_membership);
+            if let Err(error) = authorization {
+                if let Ok(mut status) = state.inner.lock() {
+                    status.running = false;
+                    status.failed = status.total;
+                    status.status = "授权验证失败".into();
+                    push_log(&mut status, error);
+                }
+            } else {
+                match task.plan {
+                    QueuedTaskPlan::Render(plan) => run_render_task(plan, state.inner.clone(), state.cancel.clone()),
+                    QueuedTaskPlan::Overlay(plan) => run_overlay_task(plan, state.inner.clone(), state.cancel.clone()),
+                    QueuedTaskPlan::Watermark(plan) => run_watermark_task(plan, state.inner.clone(), state.cancel.clone()),
+                    QueuedTaskPlan::Dedup(plan) => run_dedup_task(plan, state.inner.clone(), state.cancel.clone()),
+                }
+            }
+        }));
+        if outcome.is_err() {
+            crate::diagnostic_log::event(&format!("task {} failed after a worker panic", task.id));
             if let Ok(mut status) = state.inner.lock() {
                 status.running = false;
-                status.failed = status.total;
-                status.status = "授权验证失败".into();
-                push_log(&mut status, error);
+                status.failed = status.total.saturating_sub(status.completed);
+                status.status = "处理异常".into();
+                push_log(&mut status, "处理线程异常退出，请在日志中查看原因后重试。".into());
+                update_progress(&mut status);
             }
-        } else {
-        match task.plan {
-            QueuedTaskPlan::Render(plan) => run_render_task(plan, state.inner.clone(), state.cancel.clone()),
-            QueuedTaskPlan::Overlay(plan) => run_overlay_task(plan, state.inner.clone(), state.cancel.clone()),
-            QueuedTaskPlan::Watermark(plan) => run_watermark_task(plan, state.inner.clone(), state.cancel.clone()),
-            QueuedTaskPlan::Dedup(plan) => run_dedup_task(plan, state.inner.clone(), state.cancel.clone()),
-        }
-
         }
         let final_status = state.inner.lock().ok().map(|status| status.clone());
         if let Some(final_status) = final_status {
+            crate::diagnostic_log::event(&format!("task {} ended: completed={}, failed={}, cancelled={}", task.id, final_status.completed, final_status.failed, final_status.cancelled));
             finish_queue_item(&state.queue_items, &task.id, &final_status);
         }
         if let Ok(mut status) = state.inner.lock() {
@@ -1637,6 +1654,7 @@ fn run_render_task(plan: RenderPlan, state: Arc<Mutex<RenderTaskStatus>>, cancel
     );
     log_state(&state, format!("理论不重复组合数：{}。", max_unique));
     let workers = worker_count(&plan);
+    crate::diagnostic_log::event(&format!("mix workers={workers}, outputs={}, segments={}", plan.config.output_count, plan.config.segment_count));
     let mut batch = Vec::new();
     for index in 1..=plan.config.output_count {
         if cancel.load(Ordering::SeqCst) {
@@ -1814,7 +1832,7 @@ fn process_render_job(
 
 fn build_preprocess_cmd(ffmpeg: &Path, src: &Path, dst: &Path, config: &RenderConfig, variant: &Variant, keep_audio: bool, encoder: EncoderKind) -> Command {
     let mut cmd = Command::new(ffmpeg);
-    cmd.args(["-hide_banner", "-loglevel", "error", "-y"]);
+    cmd.args(["-hide_banner", "-loglevel", "error", "-filter_threads", "2", "-y"]);
     if config.trim_start_seconds > 0.0 {
         cmd.args(["-ss", &format!("{:.3}", config.trim_start_seconds)]);
     }
@@ -1827,6 +1845,9 @@ fn build_preprocess_cmd(ffmpeg: &Path, src: &Path, dst: &Path, config: &RenderCo
     let vf = format!("scale={output_w}:{output_h}:force_original_aspect_ratio=decrease,pad={output_w}:{output_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,setpts=PTS/{:.5},fps={}", variant.speed, variant.fps);
     cmd.args(["-vf", &vf]);
     append_video_encoder_args(&mut cmd, encoder, variant.bitrate.as_deref(), variant.crf.unwrap_or(23));
+    if encoder == EncoderKind::Cpu {
+        cmd.args(["-threads:v", "4"]);
+    }
     if encoder != EncoderKind::Cpu || variant.bitrate.is_some() {
         let bitrate = variant.bitrate.as_deref().unwrap_or("3500k");
         let bitrate_num = bitrate.trim_end_matches('k').parse::<u32>().unwrap_or(3500);
@@ -2140,7 +2161,53 @@ fn worker_count(plan: &RenderPlan) -> usize {
         "safe" => (((auto as f64) * 0.75).floor().max(1.0) as usize).min(manual),
         _ => manual,
     };
-    selected.min(4).min(output_count)
+    limit_mix_workers_by_memory(selected.min(4).min(output_count), available_memory_bytes())
+}
+
+fn limit_mix_workers_by_memory(requested: usize, available: Option<u64>) -> usize {
+    const GIB: u64 = 1024 * 1024 * 1024;
+    // Leave space for Windows, WebView2, source decoding and other applications.
+    let Some(available) = available else { return requested.max(1); };
+    let slots = available.saturating_sub(2 * GIB) / (3 * GIB);
+    requested.min((slots as usize).max(1))
+}
+
+#[cfg(windows)]
+fn available_memory_bytes() -> Option<u64> {
+    #[repr(C)]
+    struct MemoryStatus {
+        length: u32,
+        load: u32,
+        total_phys: u64,
+        avail_phys: u64,
+        total_page_file: u64,
+        avail_page_file: u64,
+        total_virtual: u64,
+        avail_virtual: u64,
+        avail_extended_virtual: u64,
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GlobalMemoryStatusEx(status: *mut MemoryStatus) -> i32;
+    }
+    let mut status = MemoryStatus {
+        length: std::mem::size_of::<MemoryStatus>() as u32,
+        load: 0,
+        total_phys: 0,
+        avail_phys: 0,
+        total_page_file: 0,
+        avail_page_file: 0,
+        total_virtual: 0,
+        avail_virtual: 0,
+        avail_extended_virtual: 0,
+    };
+    // Windows writes the entire repr(C) structure after its length is set.
+    (unsafe { GlobalMemoryStatusEx(&mut status) } != 0).then_some(status.avail_phys)
+}
+
+#[cfg(not(windows))]
+fn available_memory_bytes() -> Option<u64> {
+    None
 }
 
 fn concurrency_label(mode: &str) -> &'static str {

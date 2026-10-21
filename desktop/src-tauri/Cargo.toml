@@ -1,6 +1,6 @@
 [package]
 name = "video-mix-pro"
-version = "0.2.4"
+version = "0.2.5"
 description = "Video Mix Pro Windows desktop client"
 authors = ["Video Mix Pro"]
 edition = "2021"

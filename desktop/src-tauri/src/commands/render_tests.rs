@@ -8,6 +8,17 @@ fn workdir() -> PathBuf {
 }
 
 #[test]
+fn mix_concurrency_keeps_memory_for_the_app() {
+    const GIB: u64 = 1024 * 1024 * 1024;
+    assert_eq!(limit_mix_workers_by_memory(4, Some(4 * GIB)), 1);
+    assert_eq!(limit_mix_workers_by_memory(4, Some(8 * GIB)), 2);
+    assert_eq!(limit_mix_workers_by_memory(4, Some(16 * GIB)), 4);
+    assert_eq!(limit_mix_workers_by_memory(2, None), 2);
+    #[cfg(windows)]
+    assert!(available_memory_bytes().is_some_and(|bytes| bytes > 0));
+}
+
+#[test]
 fn concurrent_progress_counts_work_not_video_ordinal() {
     let state = Arc::new(Mutex::new(RenderTaskStatus { total: 4, running: true, ..Default::default() }));
     update_running_progress(&state, 4, 4, 0.5);
