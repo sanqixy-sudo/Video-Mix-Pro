@@ -3,6 +3,11 @@ mod portable;
 mod process;
 mod media;
 mod diagnostic_log;
+mod cleanup;
+
+pub fn run_cleanup_helper_if_requested() -> Option<i32> {
+    cleanup::run_helper_if_requested()
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

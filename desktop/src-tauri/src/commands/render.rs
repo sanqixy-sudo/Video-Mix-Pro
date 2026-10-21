@@ -1655,11 +1655,12 @@ fn run_render_task(plan: RenderPlan, state: Arc<Mutex<RenderTaskStatus>>, cancel
     log_state(&state, format!("理论不重复组合数：{}。", max_unique));
     let workers = worker_count(&plan);
     crate::diagnostic_log::event(&format!(
-        "mix workers={workers}, outputs={}, segments={}, encoder={}, concurrency={}, available_memory_mib={:?}",
+        "mix workers={workers}, outputs={}, segments={}, encoder={}, concurrency={}, cleanup_temp={}, available_memory_mib={:?}",
         plan.config.output_count,
         plan.config.segment_count,
         plan.config.encoder,
         plan.config.concurrency_mode,
+        plan.config.cleanup_temp,
         available_memory_bytes().map(|bytes| bytes / (1024 * 1024)),
     ));
     let mut batch = Vec::new();
@@ -1709,7 +1710,7 @@ fn run_render_task(plan: RenderPlan, state: Arc<Mutex<RenderTaskStatus>>, cancel
     }
 
     if plan.config.cleanup_temp {
-        let _ = fs::remove_dir_all(&temp_root);
+        cleanup_mix_temp(&state, &temp_root, "mix temp root");
     }
 
     if let Ok(mut status) = state.lock() {
@@ -1752,7 +1753,9 @@ fn process_render_job(
     cancel: Arc<AtomicBool>,
 ) {
     if cancel.load(Ordering::SeqCst) {
-        let _ = fs::remove_dir_all(&job.job_dir);
+        if plan.config.cleanup_temp {
+            cleanup_mix_temp(&state, &job.job_dir, &format!("mix job {}", job.index));
+        }
         return;
     }
 
@@ -1805,7 +1808,7 @@ fn process_render_job(
                 part_paths.push(part_path);
             }
             Err(err) => {
-                crate::diagnostic_log::event(&format!("mix job {} part {} failed", job.index, part_index + 1));
+                crate::diagnostic_log::event(&format!("mix job {} part {} failed: {}", job.index, part_index + 1, diagnostic_error_tail(&err, src, &job.job_dir)));
                 ok = false;
                 log_state(&state, format!("[{}] 处理素材失败：{}", job.index, file_name(src)));
                 log_state(&state, err.chars().take(3000).collect::<String>());
@@ -1855,13 +1858,31 @@ fn process_render_job(
     }
 
     if plan.config.cleanup_temp {
-        let _ = fs::remove_dir_all(&job.job_dir);
+        cleanup_mix_temp(&state, &job.job_dir, &format!("mix job {}", job.index));
     }
     crate::diagnostic_log::event(&format!(
         "mix job {} ended, available_memory_mib={:?}",
         job.index,
         available_memory_bytes().map(|bytes| bytes / (1024 * 1024)),
     ));
+}
+
+fn cleanup_mix_temp(state: &Arc<Mutex<RenderTaskStatus>>, path: &Path, label: &str) {
+    crate::diagnostic_log::event(&format!("{label} cleanup started"));
+    match crate::cleanup::remove_dir_all_isolated(path) {
+        Ok(()) => crate::diagnostic_log::event(&format!("{label} cleanup completed")),
+        Err(error) => {
+            crate::diagnostic_log::event(&format!("{label} cleanup failed: {error}"));
+            log_state(state, format!("临时文件清理失败，文件保留在输出目录的 _temp_video_mix 中：{error}"));
+        }
+    }
+}
+
+fn diagnostic_error_tail(error: &str, source: &Path, workdir: &Path) -> String {
+    let tail = error.chars().rev().take(1200).collect::<String>().chars().rev().collect::<String>();
+    tail.replace(source.to_string_lossy().as_ref(), "<source>")
+        .replace(workdir.to_string_lossy().as_ref(), "<temp>")
+        .replace(['\r', '\n'], " | ")
 }
 
 fn build_preprocess_cmd(ffmpeg: &Path, src: &Path, dst: &Path, config: &RenderConfig, variant: &Variant, keep_audio: bool, encoder: EncoderKind) -> Command {
