@@ -16,8 +16,6 @@ mod tests;
 
 const VIDEO_EXTS: &[&str] = &["mp4", "mov", "mkv", "avi", "webm", "m4v", "flv", "wmv", "ts"];
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "bmp"];
-const OVERLAY_W: i32 = 1080;
-const OVERLAY_H: i32 = 1920;
 static QUEUE_SEQUENCE: AtomicU32 = AtomicU32::new(1);
 const BANNER_KEYWORDS: &[&str] = &[
     "banner", "overlay", "adbar", "ad_bar", "install_banner", "hengfu", "横幅", "安装条",
@@ -116,6 +114,8 @@ impl Default for RenderTaskStatus {
 pub struct RenderConfig {
     pub source_folder: String,
     pub output_folder: String,
+    #[serde(default)]
+    pub orientation: OutputOrientation,
     pub segment_count: u32,
     pub output_count: u32,
     pub trim_start_seconds: f64,
@@ -151,6 +151,8 @@ pub struct OverlayConfig {
     pub frame_file: String,
     pub video_files: Vec<String>,
     pub output_folder: String,
+    #[serde(default)]
+    pub orientation: OutputOrientation,
     pub x: i32,
     pub y: i32,
     pub width: u32,
@@ -173,6 +175,23 @@ pub struct OverlayConfig {
     pub naming_seq_digits: u32,
     #[serde(rename = "conflictStrategy")]
     pub conflict_strategy: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum OutputOrientation {
+    #[default]
+    Portrait,
+    Landscape,
+}
+
+impl OutputOrientation {
+    fn dimensions(self) -> (i32, i32) {
+        match self {
+            Self::Portrait => (1080, 1920),
+            Self::Landscape => (1920, 1080),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -1022,16 +1041,17 @@ fn validate_overlay_plan(app: &tauri::AppHandle, config: OverlayConfig) -> Resul
         return Err("选择的视频不存在、不可访问或格式不支持。".to_string());
     }
 
+    let (canvas_w, canvas_h) = config.orientation.dimensions();
     let w = even_dimension(config.width.max(2));
     let h = even_dimension(config.height.max(2));
-    if w > 2160 || h > 3840 {
-        return Err("视频层尺寸过大，请将宽高控制在 2160x3840 以内。".to_string());
+    if w > (canvas_w * 2) as u32 || h > (canvas_h * 2) as u32 {
+        return Err(format!("视频层尺寸过大，请将宽高控制在 {}x{} 以内。", canvas_w * 2, canvas_h * 2));
     }
-    let x = config.x.clamp(-OVERLAY_W, OVERLAY_W);
-    let y = config.y.clamp(-OVERLAY_H, OVERLAY_H);
-    let outside = x >= OVERLAY_W || y >= OVERLAY_H || x + w as i32 <= 0 || y + h as i32 <= 0;
+    let x = config.x.clamp(-canvas_w, canvas_w);
+    let y = config.y.clamp(-canvas_h, canvas_h);
+    let outside = x >= canvas_w || y >= canvas_h || x + w as i32 <= 0 || y + h as i32 <= 0;
     if outside {
-        return Err("视频层完全位于 1080x1920 画布外，请调整 X/Y/宽高。".to_string());
+        return Err(format!("视频层完全位于 {canvas_w}x{canvas_h} 画布外，请调整 X/Y/宽高。"));
     }
 
     if config.fps == 0 || config.fps > 120 {
@@ -1410,9 +1430,12 @@ fn run_overlay_task(plan: OverlayPlan, state: Arc<Mutex<RenderTaskStatus>>, canc
     let total = plan.videos.len() as u32;
     let workers = overlay_worker_count(&plan);
     let next_index = Arc::new(AtomicU32::new(0));
+    let (canvas_w, canvas_h) = plan.config.orientation.dimensions();
     log_state(&state, format!(
-        "背景合成任务参数：背景图={}，输出=1080x1920，视频层 x={} y={} w={} h={}，适配={}，音频={}，编码={}，并发={}，冲突={}。",
+        "背景合成任务参数：背景图={}，输出={}x{}，视频层 x={} y={} w={} h={}，适配={}，音频={}，编码={}，并发={}，冲突={}。",
         file_name(&plan.frame),
+        canvas_w,
+        canvas_h,
         plan.config.x,
         plan.config.y,
         plan.config.width,
@@ -1516,10 +1539,11 @@ fn run_overlay_ffmpeg(
     state: &Arc<Mutex<RenderTaskStatus>>,
     cancel: &Arc<AtomicBool>,
 ) -> Result<(), String> {
-    let x = plan.config.x.clamp(-OVERLAY_W, OVERLAY_W);
-    let y = plan.config.y.clamp(-OVERLAY_H, OVERLAY_H);
-    let w = even_dimension(plan.config.width.max(2).min(2160));
-    let h = even_dimension(plan.config.height.max(2).min(3840));
+    let (canvas_w, canvas_h) = plan.config.orientation.dimensions();
+    let x = plan.config.x.clamp(-canvas_w, canvas_w);
+    let y = plan.config.y.clamp(-canvas_h, canvas_h);
+    let w = even_dimension(plan.config.width.max(2).min((canvas_w * 2) as u32));
+    let h = even_dimension(plan.config.height.max(2).min((canvas_h * 2) as u32));
     let fps = plan.config.fps.clamp(1, 120);
     let crf = plan.config.crf.min(51) as u8;
     let preset = match plan.config.preset.as_str() {
@@ -1532,7 +1556,7 @@ fn run_overlay_ffmpeg(
         format!("[1:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}[vid]")
     };
     let filter_complex = format!(
-        "[0:v]scale={OVERLAY_W}:{OVERLAY_H}:force_original_aspect_ratio=increase,crop={OVERLAY_W}:{OVERLAY_H},fps={fps},format=rgba[bg];{video_filter};[bg][vid]overlay={x}:{y}:format=auto,fps={fps},format=yuv420p[v]"
+        "[0:v]scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{canvas_h},fps={fps},format=rgba[bg];{video_filter};[bg][vid]overlay={x}:{y}:format=auto,fps={fps},format=yuv420p[v]"
     );
 
     let mut cmd = Command::new(&plan.ffmpeg);
@@ -1601,6 +1625,8 @@ fn even_dimension(value: u32) -> u32 {
 }
 
 fn run_render_task(plan: RenderPlan, state: Arc<Mutex<RenderTaskStatus>>, cancel: Arc<AtomicBool>) {
+    let (output_w, output_h) = plan.config.orientation.dimensions();
+    log_state(&state, format!("批量混剪输出：{output_w}x{output_h}。"));
     let temp_root = plan.output.join("_temp_video_mix");
     let _ = fs::create_dir_all(&temp_root);
 
@@ -1757,7 +1783,7 @@ fn process_render_job(
         match concat_parts(&plan.ffmpeg, &part_paths, &concat_output, &job.job_dir, &cancel) {
             Ok(()) => {
                 if let Some(banner) = plan.banner.as_ref() {
-                    if let Err(err) = apply_banner_overlay(&plan.ffmpeg, &concat_output, banner, &staged_output, keep_audio, job.encoder, &cancel) {
+                    if let Err(err) = apply_banner_overlay(&plan.ffmpeg, &concat_output, banner, &staged_output, keep_audio, job.encoder, plan.config.orientation.dimensions().0, &cancel) {
                         log_state(&state, format!("[{}] 底栏视频覆盖失败：{}", job.index, job.actual_output_name));
                         log_state(&state, err.chars().take(3000).collect::<String>());
                         mark_failed(&state, job.index, String::new());
@@ -1797,7 +1823,8 @@ fn build_preprocess_cmd(ffmpeg: &Path, src: &Path, dst: &Path, config: &RenderCo
     if keep_audio {
         cmd.args(["-map", "0:a:0"]);
     }
-    let vf = format!("scale=1080:1920,setdar=9/16,setsar=1,setpts=PTS/{:.5},fps={}", variant.speed, variant.fps);
+    let (output_w, output_h) = config.orientation.dimensions();
+    let vf = format!("scale={output_w}:{output_h}:force_original_aspect_ratio=decrease,pad={output_w}:{output_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,setpts=PTS/{:.5},fps={}", variant.speed, variant.fps);
     cmd.args(["-vf", &vf]);
     append_video_encoder_args(&mut cmd, encoder, variant.bitrate.as_deref(), variant.crf.unwrap_or(23));
     if encoder != EncoderKind::Cpu || variant.bitrate.is_some() {
@@ -1840,14 +1867,14 @@ fn concat_parts(ffmpeg: &Path, part_paths: &[PathBuf], output_path: &Path, job_d
     run_cmd(cmd, cancel)
 }
 
-fn apply_banner_overlay(ffmpeg: &Path, src: &Path, banner: &Path, dst: &Path, keep_audio: bool, encoder: EncoderKind, cancel: &AtomicBool) -> Result<(), String> {
-    let filter_complex = "[1:v]scale=1080:-2,setpts=PTS-STARTPTS[bar];[0:v][bar]overlay=(main_w-overlay_w)/2:main_h-overlay_h:format=auto:shortest=0[v]";
+fn apply_banner_overlay(ffmpeg: &Path, src: &Path, banner: &Path, dst: &Path, keep_audio: bool, encoder: EncoderKind, output_w: i32, cancel: &AtomicBool) -> Result<(), String> {
+    let filter_complex = format!("[1:v]scale={output_w}:-2,setpts=PTS-STARTPTS[bar];[0:v][bar]overlay=(main_w-overlay_w)/2:main_h-overlay_h:format=auto:shortest=0[v]");
     let mut cmd = Command::new(ffmpeg);
     cmd.args(["-hide_banner", "-loglevel", "error", "-y"]);
     cmd.arg("-i").arg(src);
     cmd.args(["-stream_loop", "-1"]);
     cmd.arg("-i").arg(banner);
-    cmd.args(["-filter_complex", filter_complex, "-map", "[v]"]);
+    cmd.args(["-filter_complex", &filter_complex, "-map", "[v]"]);
     if keep_audio {
         cmd.args(["-map", "0:a?"]);
     }

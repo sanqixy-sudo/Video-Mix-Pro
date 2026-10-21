@@ -65,6 +65,17 @@ fn assert_completed(state: &Arc<Mutex<RenderTaskStatus>>) {
     assert_eq!(state.progress,100);
 }
 
+fn assert_video_size(ffprobe: &Path, folder: &Path, width: u64, height: u64) {
+    let video = fs::read_dir(folder).unwrap().map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().and_then(|ext| ext.to_str()) == Some("mp4")).unwrap();
+    let output = Command::new(ffprobe).args(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json"])
+        .arg(&video).output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["streams"][0]["width"].as_u64(), Some(width), "{}", video.display());
+    assert_eq!(value["streams"][0]["height"].as_u64(), Some(height), "{}", video.display());
+}
+
 #[test]
 fn real_media_workflows_cache_failure_and_cancel() {
     let dir=workdir();
@@ -93,14 +104,22 @@ fn real_media_workflows_cache_failure_and_cancel() {
     let out=dir.join("overlay");fs::create_dir_all(&out).unwrap();
     let plan=OverlayPlan { config:serde_json::from_value(naming).unwrap(),frame:frame.clone(),videos:vec![video.clone()],output:out,ffmpeg:ffmpeg.clone(),ffprobe:Some(ffprobe.clone()),probes:Arc::default() };
     let state=Arc::new(Mutex::new(initial_overlay_status(&plan,"overlay")));
+    let mut landscape_overlay=plan.clone();landscape_overlay.config.orientation=OutputOrientation::Landscape;
+    landscape_overlay.output=dir.join("overlay-landscape");fs::create_dir_all(&landscape_overlay.output).unwrap();
     run_overlay_task(plan,state.clone(),cancel.clone());assert_completed(&state);
+    let landscape_state=Arc::new(Mutex::new(initial_overlay_status(&landscape_overlay,"overlay-landscape")));
+    run_overlay_task(landscape_overlay,landscape_state.clone(),cancel.clone());assert_completed(&landscape_state);
 
     let config=serde_json::json!({"sourceFolder":"","outputFolder":"","segmentCount":1,"outputCount":2,"trimStartSeconds":0.0,"enableFirstVideo":false,"firstVideoFolder":"","enableTopInsert":false,"enableTailVideo":false,"tailVideoFolder":"","enableBannerOverlay":false,"bannerFile":"","allowRepeatInsideOneVideo":false,"enableDedupWhenComboRepeated":false,"keepAudio":true,"cleanupTemp":true,"encoder":"cpu_libx264","workers":2,"concurrencyMode":"manual","enableAutoNaming":false,"namingUseSourceName":false,"namingDate":"","namingPart1":"","namingPart2":"","namingPart3":"","namingPart4":"","namingSeqDigits":4,"conflictStrategy":"overwrite"});
     let out=dir.join("mix");fs::create_dir_all(&out).unwrap();
     let plan=RenderPlan { config:serde_json::from_value(config).unwrap(),source:dir.clone(),output:out,ffmpeg:ffmpeg.clone(),ffprobe:Some(ffprobe.clone()),videos:vec![video.clone()],first_videos:vec![],top_videos:vec![],tail_videos:vec![],banner:None,probes:Arc::default() };
     let probes=plan.probes.clone();
     let state=Arc::new(Mutex::new(initial_render_status(&plan,"mix")));
+    let mut landscape_mix=plan.clone();landscape_mix.config.orientation=OutputOrientation::Landscape;
+    landscape_mix.config.output_count=1;landscape_mix.output=dir.join("mix-landscape");fs::create_dir_all(&landscape_mix.output).unwrap();
     run_render_task(plan,state.clone(),cancel.clone());assert_completed(&state);
+    let landscape_state=Arc::new(Mutex::new(initial_render_status(&landscape_mix,"mix-landscape")));
+    run_render_task(landscape_mix,landscape_state.clone(),cancel.clone());assert_completed(&landscape_state);
     assert_eq!(probes.calls.load(Ordering::SeqCst),1,"same clip is probed once across workers");
 
     // Old output survives a corrupt input; no partial final file blocks a retry.
@@ -120,7 +139,11 @@ fn real_media_workflows_cache_failure_and_cancel() {
     trigger.join().unwrap();assert!(cancel_ms<2000);
 
     let mut outputs=Vec::new();
-    for folder in ["dedup","watermark","overlay","mix"] {
+    assert_video_size(&ffprobe,&dir.join("overlay"),1080,1920);
+    assert_video_size(&ffprobe,&dir.join("overlay-landscape"),1920,1080);
+    assert_video_size(&ffprobe,&dir.join("mix"),1080,1920);
+    assert_video_size(&ffprobe,&dir.join("mix-landscape"),1920,1080);
+    for folder in ["dedup","watermark","overlay","overlay-landscape","mix","mix-landscape"] {
         for entry in fs::read_dir(dir.join(folder)).unwrap() {
             let path=entry.unwrap().path();if path.extension().and_then(|e|e.to_str())!=Some("mp4") { continue; }
             let info=crate::media::ProbeCache::default().get(&ffprobe,&path);
@@ -128,7 +151,7 @@ fn real_media_workflows_cache_failure_and_cancel() {
             outputs.push(serde_json::json!({"file":path,"duration":info.duration,"has_audio":info.has_audio}));
         }
     }
-    assert_eq!(outputs.len(),5);
+    assert_eq!(outputs.len(),7);
     let report=serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"outputs":outputs,"ffmpeg_cancel_ms":cancel_ms,"shared_clip_probe_calls":probes.calls.load(Ordering::SeqCst),"failed_overwrite_preserved":true});
     fs::write(dir.join("report.json"),serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     println!("MEDIA_REPORT={}",dir.join("report.json").display());

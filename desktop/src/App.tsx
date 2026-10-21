@@ -44,6 +44,7 @@ export const defaultAuth: AuthState = {
 export const defaultMaterials: MaterialConfig = {
   sourceFolder: "",
   outputFolder: "",
+  orientation: "portrait",
   segmentCount: 3,
   outputCount: 10,
   trimStartSeconds: 0.1,
@@ -76,6 +77,7 @@ export const defaultOverlay: OverlayConfig = {
   frameFile: "",
   videoFiles: [],
   outputFolder: "",
+  orientation: "portrait",
   x: 140,
   y: 420,
   width: 800,
@@ -190,7 +192,7 @@ export function App() {
   const [submitError, setSubmitError] = useState("");
   const [authAction, setAuthAction] = useState<"login" | "register" | "verify" | "redeem" | null>(null);
   const [authError, setAuthError] = useState("");
-  const [currentVersion, setCurrentVersion] = useState("0.2.3");
+  const [currentVersion, setCurrentVersion] = useState("0.2.4");
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateError, setUpdateError] = useState("");
@@ -259,7 +261,7 @@ export function App() {
     setUpdateChecking(true);
     setUpdateError("");
     try {
-      let version = "0.2.3";
+      let version = "0.2.4";
       if ("__TAURI_INTERNALS__" in window) {
         const { getVersion } = await import("@tauri-apps/api/app");
         version = await getVersion();

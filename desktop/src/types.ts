@@ -5,6 +5,7 @@ export type PlanKey = "month" | "quarter" | "half_year" | "year" | "permanent" |
 export type EncoderKey = "cpu_libx264" | "intel_qsv" | "nvidia_nvenc" | "amd_amf" | "mixed_intel" | "mixed_nvidia" | "mixed_amd";
 export type ConflictStrategy = "skip" | "overwrite" | "suffix";
 export type ConcurrencyMode = "manual" | "auto" | "safe";
+export type OutputOrientation = "portrait" | "landscape";
 export type ToastTone = "success" | "warning" | "danger" | "info";
 export type ServerConnectionStatus = "checking" | "connected" | "failed";
 
@@ -53,6 +54,7 @@ export interface UpdateInfo {
 export interface MaterialConfig {
   sourceFolder: string;
   outputFolder: string;
+  orientation: OutputOrientation;
   segmentCount: number;
   outputCount: number;
   trimStartSeconds: number;
@@ -85,6 +87,7 @@ export interface OverlayConfig {
   frameFile: string;
   videoFiles: string[];
   outputFolder: string;
+  orientation: OutputOrientation;
   x: number;
   y: number;
   width: number;

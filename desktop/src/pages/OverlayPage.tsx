@@ -4,8 +4,6 @@ import { FolderOpen, Play } from "lucide-react";
 import { pickDirectory, pickFile, pickFiles } from "../lib/tauri";
 import type { OverlayConfig } from "../types";
 
-const OUT_W = 1080;
-const OUT_H = 1920;
 const MIN_LAYER_SIZE = 50;
 
 type DragState =
@@ -29,6 +27,8 @@ export function OverlayPage({
   onStart: () => void;
   onOpenPerformance: () => void;
 }) {
+  const OUT_W = config.orientation === "landscape" ? 1920 : 1080;
+  const OUT_H = config.orientation === "landscape" ? 1080 : 1920;
   const [videoAspect, setVideoAspect] = useState<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -89,7 +89,7 @@ export function OverlayPage({
       observer.disconnect();
       window.removeEventListener("resize", updateScale);
     };
-  }, []);
+  }, [OUT_W, OUT_H]);
 
   const chooseFrame = async () => {
     const path = await pickFile("image");
@@ -116,8 +116,18 @@ export function OverlayPage({
       y: patch.y ?? config.y,
       width: patch.width ?? config.width,
       height: patch.height ?? config.height,
-    });
+    }, OUT_W, OUT_H);
     onUpdate(next);
+  };
+
+  const changeOrientation = (orientation: OverlayConfig["orientation"]) => {
+    if (orientation === config.orientation) return;
+    const canvasW = orientation === "landscape" ? 1920 : 1080;
+    const canvasH = orientation === "landscape" ? 1080 : 1920;
+    const aspect = videoAspect || (orientation === "landscape" ? 16 / 9 : 9 / 16);
+    const width = Math.round(Math.min(canvasW * 0.9, canvasH * 0.9 * aspect));
+    const height = Math.round(width / aspect);
+    onUpdate({ orientation, width, height, x: Math.round((canvasW - width) / 2), y: Math.round((canvasH - height) / 2) });
   };
 
   const centerVideo = () => {
@@ -125,18 +135,19 @@ export function OverlayPage({
   };
 
   const defaultVideoSize = () => {
-    const width = 800;
-    const height = config.lockAspect && videoAspect ? Math.round(width / videoAspect) : 1080;
+    const aspect = config.lockAspect && videoAspect ? videoAspect : OUT_W / OUT_H;
+    const width = Math.round(Math.min(OUT_W * 0.74, OUT_H * 0.74 * aspect));
+    const height = Math.round(width / aspect);
     updateLayer({ width, height, x: Math.round((OUT_W - width) / 2), y: Math.round((OUT_H - height) / 2) });
   };
 
   const fillCanvas = () => updateLayer({ x: 0, y: 0, width: OUT_W, height: OUT_H });
 
-  const fitVertical = () => {
-    const aspect = videoAspect || 9 / 16;
-    const height = OUT_H;
-    const width = Math.round(height * aspect);
-    updateLayer({ width, height, x: Math.round((OUT_W - width) / 2), y: 0 });
+  const fitCanvas = () => {
+    const aspect = videoAspect || OUT_W / OUT_H;
+    const width = Math.round(Math.min(OUT_W, OUT_H * aspect));
+    const height = Math.round(width / aspect);
+    updateLayer({ width, height, x: Math.round((OUT_W - width) / 2), y: Math.round((OUT_H - height) / 2) });
   };
 
   const fitLayerToVideoAspect = (aspect: number, videoKey: string) => {
@@ -193,7 +204,7 @@ export function OverlayPage({
   return (
     <div>
       <h1 className="page-title">背景图视频合成</h1>
-      <p className="page-subtitle">选择静态背景图和一批视频，拖动预览中的视频层调整位置和大小，批量导出 1080×1920 MP4。</p>
+      <p className="page-subtitle">选择静态背景图和一批视频，拖动预览中的视频层调整位置和大小，批量导出 {OUT_W}×{OUT_H} MP4。</p>
 
       <div className="overlay-workbench">
         <section className="panel overlay-files-panel">
@@ -213,6 +224,14 @@ export function OverlayPage({
             <span className="input-hint">当前预览使用第一个视频，批量导出会处理全部已选视频。</span>
           </div>
           <PathField label="输出文件夹" value={config.outputFolder} placeholder="默认：第一个视频同目录 / output" onChange={(outputFolder) => onUpdate({ outputFolder })} onPick={chooseOutput} />
+          <div className="input-field">
+            <label htmlFor="overlay-orientation">输出画面</label>
+            <select id="overlay-orientation" value={config.orientation} onChange={(event) => changeOrientation(event.target.value as OverlayConfig["orientation"])}>
+              <option value="portrait">竖屏 · 1080×1920</option>
+              <option value="landscape">横屏 · 1920×1080</option>
+            </select>
+            <span className="input-hint">背景图会铺满画布，超出的边缘会被裁剪。</span>
+          </div>
         </section>
 
         <section className="panel overlay-preview-panel">
@@ -222,7 +241,7 @@ export function OverlayPage({
           </div>
           <div ref={stageWrapRef} className="overlay-stage-wrap">
             <div className="overlay-stage" style={{ width: OUT_W * previewScale, height: OUT_H * previewScale }} onWheel={zoomAt}>
-              {frameSrc && !frameError ? <img className="overlay-frame-img" src={frameSrc} alt="背景预览" draggable={false} onError={() => setFrameError(true)} /> : <div className="overlay-frame-placeholder">{config.frameFile ? "背景预览加载失败" : "请选择 9:16 背景图片"}</div>}
+              {frameSrc && !frameError ? <img className="overlay-frame-img" src={frameSrc} alt="背景预览" draggable={false} onError={() => setFrameError(true)} /> : <div className="overlay-frame-placeholder">{config.frameFile ? "背景预览加载失败" : "请选择背景图片"}</div>}
               <div className={`overlay-video-layer ${drag ? "dragging" : ""}`} style={{ left: layer.x, top: layer.y, width: layer.width, height: layer.height }} onPointerDown={(event) => startPointer(event, "move")}>
                 {videoSrc && !videoError ? (
                   <video className={config.mode === "contain" ? "contain" : "cover"} src={videoSrc} muted autoPlay loop playsInline preload="metadata" onLoadedMetadata={(event) => {
@@ -256,7 +275,7 @@ export function OverlayPage({
               <button className="btn btn-secondary" onClick={centerVideo}>一键居中</button>
               <button className="btn btn-secondary" onClick={defaultVideoSize}>推荐大小</button>
               <button className="btn btn-secondary" onClick={fillCanvas}>铺满画布</button>
-              <button className="btn btn-secondary" onClick={fitVertical}>竖屏适配</button>
+              <button className="btn btn-secondary" onClick={fitCanvas}>按比例适配</button>
             </div>
             <div className="input-field">
               <label>适配方式</label>
@@ -382,13 +401,13 @@ function toPreviewRect(config: OverlayConfig, scale: number) {
   };
 }
 
-function constrainLayer(layer: Pick<OverlayConfig, "x" | "y" | "width" | "height">) {
-  const width = Math.min(2160, Math.max(MIN_LAYER_SIZE, Math.round(layer.width)));
-  const height = Math.min(3840, Math.max(MIN_LAYER_SIZE, Math.round(layer.height)));
+function constrainLayer(layer: Pick<OverlayConfig, "x" | "y" | "width" | "height">, canvasW: number, canvasH: number) {
+  const width = Math.min(canvasW * 2, Math.max(MIN_LAYER_SIZE, Math.round(layer.width)));
+  const height = Math.min(canvasH * 2, Math.max(MIN_LAYER_SIZE, Math.round(layer.height)));
   const minX = -width + 1;
-  const maxX = OUT_W - 1;
+  const maxX = canvasW - 1;
   const minY = -height + 1;
-  const maxY = OUT_H - 1;
+  const maxY = canvasH - 1;
   return {
     width,
     height,

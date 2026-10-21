@@ -95,6 +95,14 @@ export function MixWorkflowPage({
           <NumberField label="计划生成数量" value={materials.outputCount} min={1} onChange={(outputCount) => onUpdate({ outputCount })} />
           <Toggle label="保留原视频声音" value={materials.keepAudio} onChange={() => onUpdate({ keepAudio: !materials.keepAudio })} />
         </div>
+        <div className="input-field">
+          <label htmlFor="mix-orientation">输出画面</label>
+          <select id="mix-orientation" value={materials.orientation} onChange={(event) => onUpdate({ orientation: event.target.value as MaterialConfig["orientation"] })}>
+            <option value="portrait">竖屏 · 1080×1920</option>
+            <option value="landscape">横屏 · 1920×1080</option>
+          </select>
+          <span className="input-hint">素材会按比例适配画面，空余区域补黑边。</span>
+        </div>
         <div className="workflow-summary-strip">
           <span>主素材 <strong>{formatNumber(scan.mainCount)}</strong></span>
           <span>理论组合 <strong>{formatNumber(maxCombos)}</strong></span>
