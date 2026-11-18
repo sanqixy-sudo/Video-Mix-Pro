@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py /app/app.py
 COPY admin_schema.py admin_service.py admin_routes.py /app/
 COPY --from=admin-build /build/dist /app/web-admin/dist
+COPY --from=admin-build /build/package.json /app/web-admin/package.json
 COPY templates /app/templates
 COPY static /app/static
 RUN groupadd --system --gid 10001 appuser \

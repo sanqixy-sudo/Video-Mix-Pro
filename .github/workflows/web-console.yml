@@ -28,9 +28,10 @@ jobs:
       - run: python -m unittest discover -s tests -v
         working-directory: server
       - run: python tests/docker_acceptance.py
+        if: github.ref_type != 'tag'
         working-directory: server
   publish:
-    if: startsWith(github.ref, 'refs/tags/web-v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/web-v')
     needs: acceptance
     runs-on: ubuntu-latest
     permissions:
@@ -38,6 +39,10 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r server/requirements-dev.txt
       - name: Validate Web version and image name
         shell: bash
         run: |
@@ -45,12 +50,13 @@ jobs:
           test "$GITHUB_REF_NAME" = "web-v$version"
           echo "WEB_VERSION=$version" >> "$GITHUB_ENV"
           echo "WEB_IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-web" >> "$GITHUB_ENV"
-      - name: Build and publish Web image
+      - name: Build, verify, and publish Web image
         shell: bash
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           trap 'docker logout ghcr.io' EXIT
           docker build server \
             --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
@@ -59,7 +65,11 @@ jobs:
             --tag "$WEB_IMAGE:$WEB_VERSION" \
             --tag "$WEB_IMAGE:sha-$GITHUB_SHA" \
             --tag "$WEB_IMAGE:latest"
+          VIDEO_MIX_QA_IMAGE="$WEB_IMAGE:$WEB_VERSION" python server/tests/docker_acceptance.py
           docker push "$WEB_IMAGE:$WEB_VERSION"
           docker push "$WEB_IMAGE:sha-$GITHUB_SHA"
           docker push "$WEB_IMAGE:latest"
-          echo "Published $WEB_IMAGE:$WEB_VERSION" >> "$GITHUB_STEP_SUMMARY"
+          docker image rm "$WEB_IMAGE:$WEB_VERSION"
+          docker pull "$WEB_IMAGE:$WEB_VERSION"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$WEB_IMAGE:$WEB_VERSION")" = "$GITHUB_SHA"
+          docker image inspect --format '{{join .RepoDigests "\n"}}' "$WEB_IMAGE:$WEB_VERSION" >> "$GITHUB_STEP_SUMMARY"
