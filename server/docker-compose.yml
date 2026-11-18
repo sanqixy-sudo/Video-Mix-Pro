@@ -1,5 +1,6 @@
 services:
   video-mix-member:
+    image: ${VIDEO_MIX_WEB_IMAGE:-video-mix-member:local}
     build: .
     container_name: video-mix-member
     restart: unless-stopped
@@ -19,7 +20,7 @@ services:
       SESSION_TTL_DAYS: "${SESSION_TTL_DAYS:-30}"
       SESSION_IDLE_HOURS: "${SESSION_IDLE_HOURS:-72}"
       APP_VERSION: "${APP_VERSION:-0.2.1}"
-      SERVER_VERSION: "${SERVER_VERSION:-0.3.0}"
+      SERVER_VERSION: "${SERVER_VERSION:-}"
       LEGACY_CLIENT_VERSION: "${LEGACY_CLIENT_VERSION:-0.2.0}"
       DEVICE_REBIND_COOLDOWN_HOURS: "${DEVICE_REBIND_COOLDOWN_HOURS:-6}"
       ADMIN_SESSION_HOURS: "${ADMIN_SESSION_HOURS:-8}"

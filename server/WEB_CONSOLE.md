@@ -1,4 +1,4 @@
-# Web 管理后台 0.3.0
+# Web 管理后台
 
 新后台位于 `server/web-admin`（React 19 / TypeScript / Vite / Ant Design 6）。官网使用 FastAPI 模板和独立静态资源；客户端授权、兑换、更新 API 地址不变。
 
@@ -24,7 +24,7 @@
 
 推送 `web-v<版本号>` 标签会先执行前端构建、依赖审计、后端回归和真实 Docker 验收，通过后发布 `ghcr.io/sanqixy-sudo/video-mix-pro-web:<版本号>`，同时保留 `sha-<完整提交号>` 和 `latest` 标签。标签必须与 `web-admin/package.json` 的版本一致。客户端使用独立的 `v0.2.3` 标签，不会触发 Web 镜像发布。
 
-镜像可用后拉取固定版本：`docker pull ghcr.io/sanqixy-sudo/video-mix-pro-web:0.3.0`。使用 `docker-compose.yml` 时可将 `build: .` 替换为 `image: ghcr.io/sanqixy-sudo/video-mix-pro-web:0.3.0`，保留原有环境变量、端口和数据卷路径。首次创建的 GHCR 包默认可能为私有；此时需有读取权限的账号登录 GHCR，或由仓库所有者在包设置中公开。源码构建不受镜像访问权限影响。
+版本镜像示例为 `ghcr.io/sanqixy-sudo/video-mix-pro-web:0.3.1`。在现有 `.env` 设置 `VIDEO_MIX_WEB_IMAGE`，运行 `docker compose pull` 与 `docker compose up -d --no-build`。移除旧的显式 `SERVER_VERSION` 后，服务从镜像读取版本。保留端口、凭据和数据卷，镜像拉取权限按 GHCR 包设置执行。
 
 ### 升级检查
 

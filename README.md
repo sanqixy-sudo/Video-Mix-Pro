@@ -6,7 +6,7 @@
 
   <p>
     <img src="https://img.shields.io/badge/客户端-0.2.7-5E6AD2?style=flat-square" alt="Client 0.2.7">
-    <img src="https://img.shields.io/badge/运营后台-0.3.0-1EA672?style=flat-square" alt="Web 0.3.0">
+    <img src="https://img.shields.io/badge/运营后台-0.3.1-1EA672?style=flat-square" alt="Web 0.3.1">
     <img src="https://img.shields.io/badge/平台-Windows_x64-1473E6?style=flat-square" alt="Windows x64">
     <img src="https://img.shields.io/badge/Tauri-2.x-24C8DB?style=flat-square" alt="Tauri 2">
     <img src="https://img.shields.io/badge/FFmpeg-内置-5CB85C?style=flat-square" alt="FFmpeg">

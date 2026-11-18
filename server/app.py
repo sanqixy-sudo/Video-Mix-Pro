@@ -71,7 +71,9 @@ ADMIN_COOKIE_SECURE = env_bool("ADMIN_COOKIE_SECURE", IS_PRODUCTION)
 TRUST_PROXY_HEADERS = env_bool("TRUST_PROXY_HEADERS", False)
 RATE_LIMIT_ENABLED = env_bool("RATE_LIMIT_ENABLED", True)
 APP_VERSION = os.environ.get("APP_VERSION", "0.2.1").strip() or "0.2.1"
-SERVER_VERSION = os.environ.get("SERVER_VERSION", "0.3.0").strip() or "0.3.0"
+WEB_PACKAGE = BASE_DIR / "web-admin" / "package.json"
+WEB_PACKAGE_VERSION = json.loads(WEB_PACKAGE.read_text(encoding="utf-8"))["version"] if WEB_PACKAGE.is_file() else "0.3.1"
+SERVER_VERSION = os.environ.get("SERVER_VERSION", "").strip() or WEB_PACKAGE_VERSION
 LEGACY_CLIENT_VERSION = os.environ.get("LEGACY_CLIENT_VERSION", "0.2.0").strip() or "0.2.0"
 CORS_ALLOW_ORIGINS = [
     origin.strip()

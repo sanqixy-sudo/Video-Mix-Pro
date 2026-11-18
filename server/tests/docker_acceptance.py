@@ -3,6 +3,8 @@
 Run from server: python tests/docker_acceptance.py
 Only containers/volumes created by this script are removed in its finally block.
 """
+import json
+import os
 import re
 import secrets
 import shutil
@@ -17,7 +19,9 @@ ROOT=Path(__file__).resolve().parents[1]
 if not shutil.which('docker'):
     raise SystemExit('Docker CLI is required; container acceptance has NOT run.')
 suffix=secrets.token_hex(6)
-image='video-mix-web-qa:'+suffix
+existing_image=os.environ.get('VIDEO_MIX_QA_IMAGE')
+image=existing_image or 'video-mix-web-qa:'+suffix
+expected_version=json.loads((ROOT/'web-admin/package.json').read_text(encoding='utf-8'))['version']
 container='vmp-qa-'+suffix
 volume=container+'-data'
 password=secrets.token_urlsafe(24)
@@ -36,7 +40,9 @@ def start():
     for _ in range(60):
         try:
             r=httpx.get(base+'/api/health',timeout=2)
-            if r.status_code==200:break
+            if r.status_code==200:
+                assert r.json()['server_version']==expected_version, r.text
+                break
         except httpx.HTTPError:pass
         time.sleep(1)
     else:raise AssertionError('Container did not become ready')
@@ -48,7 +54,8 @@ def start():
 
 try:
     docker('version',capture=True)
-    docker('build','-t',image,'.')
+    if not existing_image:
+        docker('build','-t',image,'.')
     docker('volume','create',volume)
     start()
     with httpx.Client(base_url=base,follow_redirects=True) as client:
@@ -72,4 +79,5 @@ try:
 finally:
     docker('rm','-f',container,check=False,capture=True)
     docker('volume','rm',volume,check=False,capture=True)
-    docker('image','rm',image,check=False,capture=True)
+    if not existing_image:
+        docker('image','rm',image,check=False,capture=True)
